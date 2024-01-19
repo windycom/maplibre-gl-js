@@ -70,6 +70,7 @@ import {OverscaledTileID} from '../source/tile_id';
 import {mat4} from 'gl-matrix';
 import {EXTENT} from '../data/extent';
 import {ProjectionManager} from '../render/projection_manager';
+import {Program} from '../render/program';
 
 const version = packageJSON.version;
 
@@ -3527,5 +3528,9 @@ export class Map extends Camera {
      */
     getCameraTargetElevation(): number {
         return this.transform.elevation;
+    }
+
+    getCounters(): any {
+        return Program.getCounters();
     }
 }

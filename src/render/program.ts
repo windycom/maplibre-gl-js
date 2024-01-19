@@ -43,6 +43,12 @@ export class Program<Us extends UniformBindings> {
     binderUniforms: Array<BinderUniform>;
     failedToCreate: boolean;
 
+    private static totalVertices: number = 0;
+    private static totalIndices: number = 0;
+    private static totalTriangles: number = 0;
+    private static totalLines: number = 0;
+    private static totalFrames: number = 0;
+
     constructor(context: Context,
         source: {
             fragmentSource: string;
@@ -152,6 +158,24 @@ export class Program<Us extends UniformBindings> {
         this.binderUniforms = configuration ? configuration.getUniforms(context, uniformLocations) : [];
     }
 
+    public static resetCounters() {
+        Program.totalTriangles = 0;
+        Program.totalLines = 0;
+        Program.totalVertices = 0;
+        Program.totalIndices = 0;
+        Program.totalFrames++;
+    }
+
+    public static getCounters(): any {
+        return {
+            triangles: Program.totalTriangles,
+            lines: Program.totalLines,
+            vertices: Program.totalVertices,
+            indices: Program.totalIndices,
+            frameNumber: Program.totalFrames,
+        };
+    }
+
     draw(context: Context,
         drawMode: DrawMode,
         depthMode: Readonly<DepthMode>,
@@ -243,6 +267,21 @@ export class Program<Us extends UniformBindings> {
                 segment.primitiveLength * primitiveSize,
                 gl.UNSIGNED_SHORT,
                 segment.primitiveOffset * primitiveSize * 2);
+
+            Program.totalVertices += segment.vertexLength;
+            Program.totalIndices += segment.primitiveLength * primitiveSize;
+
+            switch (drawMode) {
+                case gl.LINES:
+                    Program.totalLines += segment.primitiveLength;
+                    break;
+                case gl.TRIANGLES:
+                    Program.totalTriangles += segment.primitiveLength;
+                    break;
+                case gl.LINE_STRIP:
+                    Program.totalLines += segment.primitiveLength - 1;
+                    break;
+            }
         }
     }
 }

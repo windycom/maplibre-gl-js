@@ -406,6 +406,8 @@ export class Painter {
         this.imageManager = style.imageManager;
         this.glyphManager = style.glyphManager;
 
+        Program.resetCounters();
+
         this.symbolFadeChange = style.placement.symbolFadeChange(browser.now());
 
         this.imageManager.beginFrame();
