@@ -21,6 +21,7 @@ uniform mat4 u_coord_matrix;
 uniform bool u_is_text;
 uniform bool u_pitch_with_map;
 uniform vec2 u_texsize;
+uniform vec2 u_translation;
 
 out vec2 v_tex;
 out float v_fade_opacity;

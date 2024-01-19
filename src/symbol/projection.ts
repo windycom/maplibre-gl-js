@@ -14,8 +14,16 @@ import type {
 } from '../data/array_types.g';
 import {WritingMode} from '../symbol/shaping';
 import {findLineIntersection} from '../util/util';
+import {ProjectionData} from '../render/projection_manager';
 
 export {updateLineLabels, hideGlyphs, getLabelPlaneMatrix, getGlCoordMatrix, project, getPerspectiveRatio, placeFirstAndLastGlyph, placeGlyphAlongLine, xyTransformMat4, projectVertexToViewport, findOffsetIntersectionPoint, transformToOffsetNormal};
+
+export type SymbolProjectionData = {
+    posMatrix: mat4;
+    labelPlaneMatrix: mat4;
+    glCoordMatrix: mat4;
+    mapProjection: ProjectionData;
+};
 
 /*
  * # Overview of coordinate spaces
@@ -140,15 +148,18 @@ function isVisible(anchorPos: vec4,
  *  This is only run on labels that are aligned with lines. Horizontal labels are handled entirely in the shader.
  */
 function updateLineLabels(bucket: SymbolBucket,
-    posMatrix: mat4,
+    projectionData: SymbolProjectionData,
     painter: Painter,
     isText: boolean,
-    labelPlaneMatrix: mat4,
-    glCoordMatrix: mat4,
     pitchWithMap: boolean,
     keepUpright: boolean,
     rotateToLine: boolean,
     getElevation: (x: number, y: number) => number) {
+
+    // JP: TODO: adapt properly:
+    const posMatrix = projectionData.posMatrix;
+    const labelPlaneMatrix = projectionData.labelPlaneMatrix;
+    const glCoordMatrix = projectionData.glCoordMatrix;
 
     const sizeData = isText ? bucket.textSizeData : bucket.iconSizeData;
     const partiallyEvaluatedSize = symbolSize.evaluateSizeForZoom(sizeData, painter.transform.zoom);

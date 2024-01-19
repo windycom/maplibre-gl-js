@@ -355,6 +355,8 @@ export class Transform {
         let z = this.coveringZoomLevel(options);
         const actualZ = z;
 
+        // JP: TODO: use globe to calculate covering tiles
+
         if (options.minzoom !== undefined && z < options.minzoom) return [];
         if (options.maxzoom !== undefined && z > options.maxzoom) z = options.maxzoom;
 

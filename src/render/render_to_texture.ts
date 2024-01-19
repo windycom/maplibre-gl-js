@@ -137,12 +137,27 @@ export class RenderToTexture {
         this._renderableTiles = renderableTiles;
         this._renderableLayerIds = style._order.filter(id => !style._layers[id].isHidden(zoom));
 
+        // JP: tyto "coords" věci asi zjišťují jaké tiles vektorové mapy
+        // JP: se mají nakreslit na tiles co odpovídají 1:1 DEM tiles => odpovídají jeden tile = jedna mesh
+        // JP: takže vlastně ten tile.rttCoords je pak pro daný DEM tile (mesh) seznam vektorových tilů co do něj nakreslit
+
+        // JP: Tady se mi nelíbí, že se to pak ukládá přímo do nějakého Tile objektu, i když pochází jen z terrain_source_cache
+        // JP: pořád ho to zasírá nějakýma rtt věcma co v něm nemusí být, a imo by měly stát úplně bokem
+
+        // JP: _coordsDescendingInv je:
+        // JP: mapa source ID -> (mapa terrain tile -> tile ze source co do něj zasahuje)
+
         this._coordsDescendingInv = {};
         for (const id in style.sourceCaches) {
             this._coordsDescendingInv[id] = {};
+
+            // JP: tileIDs jsou běžné vektorové/rastrové tiles, presumably se navzájem nepřekrývají
+
             const tileIDs = style.sourceCaches[id].getVisibleCoordinates();
             for (const tileID of tileIDs) {
 
+                // JP: keys jsou všechny terénní tiles do kterých zasahuje tileID
+                // JP: hodnota v keys[terrain_tile] jsou souřadnice vektorového tile transformované tak, aby správně seděly do daného terénního tile (klíč)
 
                 const keys = this.getTerrainCoords(tileID);
                 for (const key in keys) {
@@ -205,11 +220,15 @@ export class RenderToTexture {
      * @returns if true layer is rendered to texture, otherwise false
      */
     renderLayer(layer: StyleLayer, drawBufferedRttTilesFunc: FuncDrawBufferedRttTiles): boolean {
+        // JP: pokud tato funkce vrátí false, Layer nakreslí normalní 2D painter
         if (layer.isHidden(this.painter.transform.zoom)) return false;
 
         const type = layer.type;
         const painter = this.painter;
         const isLastLayer = this._renderableLayerIds[this._renderableLayerIds.length - 1] === layer.id;
+
+        // JP: no ale když se přeskočí všechno co není fill/line/raster, kde se berou ty texty co jsou namapované na terén?
+        // JP: ony prostě levitují nad terénem, wtf?
 
         // remember background, fill, line & raster layer to render into a stack
         if (LAYERS[type]) {
@@ -221,6 +240,13 @@ export class RenderToTexture {
             // rendering is done later, all in once
             if (!isLastLayer) return true;
         }
+
+        // JP: další podmínka se provede pokud:
+        // JP: - aktuální layer je v LAYERS a zároveň je poslední
+        // JP: - předchozí byl v layers a aktuální není (předchozí podmínka se přeskočila)
+        // JP: - předchozí byl v layers a aktuální není (předchozí podmínka se přeskočila)
+        // JP: pokud aktuální ani předchozí není v layers, tak se neděje vůbec nic,
+        // JP: což vypadá trochu jako bug - ani se nenastaví this._prevType - to ale nevadí, protože jen záleží jestli _prevType byl nebo nebyl v LAYERS, a to se nastaví vždycky správně
 
         // in case a stack is finished render all collected stack-layers into a texture
         if (LAYERS[this._prevType] || (LAYERS[type] && isLastLayer)) {

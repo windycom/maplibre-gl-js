@@ -300,7 +300,11 @@ function drawLayerSymbols(
         const sizeData = isText ? bucket.textSizeData : bucket.iconSizeData;
         const transformed = pitchWithMap || tr.pitch !== 0;
 
-        const program = painter.useProgram(getSymbolProgramName(isSDF, isText, bucket), programConfiguration);
+        const programName = getSymbolProgramName(isSDF, isText, bucket);
+        if (programName !== 'symbolSDF') {
+            continue;
+        }
+        const program = painter.useProgram(programName, programConfiguration);
         const size = evaluateSizeForZoom(sizeData, tr.zoom);
         const terrainData = painter.style.map.terrain && painter.style.map.terrain.getTerrainData(coord);
 
@@ -334,8 +338,15 @@ function drawLayerSymbols(
         const labelPlaneMatrix = symbolProjection.getLabelPlaneMatrix(identity, pitchWithMap, rotateWithMap, painter.transform, s);
         const glCoordMatrix = symbolProjection.getGlCoordMatrix(identity, pitchWithMap, rotateWithMap, painter.transform, s);
 
-        const translation = painter.translatePosition(tile, translate, translateAnchor);
+        const translation = painter.translatePosition(tile, translate, translateAnchor, !pitchWithMap);
         const projectionData = painter.style.map.projectionManager.getProjectionData(coord);
+
+        const symbolProjectionData: symbolProjection.SymbolProjectionData = {
+            glCoordMatrix,
+            labelPlaneMatrix,
+            posMatrix: coord.posMatrix,
+            mapProjection: projectionData,
+        };
 
         const hasVariableAnchors = hasVariablePlacement && bucket.hasTextData();
         const updateTextFitIcon = layer.layout.get('icon-text-fit') !== 'none' &&
@@ -345,7 +356,7 @@ function drawLayerSymbols(
         if (alongLine) {
             const getElevation = painter.style.map.terrain ? (x: number, y: number) => painter.style.map.terrain.getElevation(coord, x, y) : null;
             const rotateToLine = layer.layout.get('text-rotation-alignment') === 'map';
-            symbolProjection.updateLineLabels(bucket, coord.posMatrix, painter, isText, labelPlaneMatrix, glCoordMatrix, pitchWithMap, keepUpright, rotateToLine, getElevation);
+            symbolProjection.updateLineLabels(bucket, symbolProjectionData, painter, isText, pitchWithMap, keepUpright, rotateToLine, getElevation);
         }
 
         const matrix = coord.posMatrix; // formerly also incorporated translate and translate-anchor

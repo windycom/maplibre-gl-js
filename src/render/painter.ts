@@ -580,6 +580,9 @@ export class Painter {
     translatePosMatrix(matrix: mat4, tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport', inViewportPixelUnitsUnits?: boolean): mat4 {
         if (!translate[0] && !translate[1]) return matrix;
 
+        // JP: tahle funkce je zřejmě pro offset polygonu nad souřadnicemi jako třeba viewport-aligned nápis,
+        // JP: nebo jen map-aligned, což netuším k čemu je dobré.
+        // JP: nicméně i pokud něco takto offsetnu, kreslím to pořád se stencil-clippingem dovnitř toho tile, takže to nemůže fungovat dobře, ne?
 
         const translation = this.translatePosition(tile, translate, translateAnchor, inViewportPixelUnitsUnits);
         const translatedMatrix = new Float32Array(16);

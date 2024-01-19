@@ -28,6 +28,7 @@ uniform highp float u_camera_to_center_distance;
 uniform float u_fade_change;
 uniform vec2 u_texsize;
 uniform vec2 u_texsize_icon;
+uniform vec2 u_translation;
 
 out vec4 v_data0;
 out vec4 v_data1;

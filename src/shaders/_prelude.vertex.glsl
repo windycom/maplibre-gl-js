@@ -168,6 +168,13 @@ uniform mat4 u_projection_matrix;
 
 #define GLOBE_PI 3.1415926535897932384626433832795
 
+// The WGS84 ellipsoid inverse flattening is defined as 298.257223563
+// Inverse flattening is defined as a/(a-b), where "a" is the semi-major axis and "b" the semi-minor.
+// We want to compute b/a to flatten the sphere at the poles.
+// Let "a" = 1.
+// f^-1 = 1/(1-b)   =>   1-b = 1/(f^-1)   =>   b = 1 - 1/(f^-1)
+const float ELLIPSOID_RATIO_AT_POLE = (1.0 - 1.0 / 298.257223563);
+
 uniform highp vec4 u_projection_tile_mercator_coords;
 uniform highp vec4 u_projection_clipping_plane;
 uniform highp float u_projection_globeness;
@@ -216,6 +223,7 @@ float projectCircleRadius(float tileY) {
 // get position inside the tile in range 0..8192 and project it onto the surface of a unit sphere
 vec3 projectToSphere(vec2 posInTile) {
     // JP: TODO: there could very well be a more efficient way to compute this if we take a deeper look at the geometric idea behind mercator
+    // JP: TODO: sin(atan(x)) = x / sqrt(1 + x^2); cos(atan(x)) = 1 / sqrt(1 + x^2)
     
     // Compute position in range 0..1 of the base tile of web mercator
     vec2 mercator_pos = u_projection_tile_mercator_coords.xy + u_projection_tile_mercator_coords.zw * posInTile;
@@ -246,6 +254,9 @@ vec3 projectToSphere(vec2 posInTile) {
     if (posInTile.x > 32766.5 && posInTile.y > 32766.5) {
         pos = vec3(0.0, -1.0, 0.0);
     }
+
+    // transform the shape into the reference ellipsoid such that is semi-major axis remains 1
+    //pos.y *= ELLIPSOID_RATIO_AT_POLE;
 
     return pos;
 }

@@ -31,7 +31,7 @@ export function drawBackground(painter: Painter, sourceCache: SourceCache, layer
     const depthMode = painter.depthModeForSublayer(0, pass === 'opaque' ? DepthMode.ReadWrite : DepthMode.ReadOnly);
     const colorMode = painter.colorModeForRenderPass();
     const program = painter.useProgram(image ? 'backgroundPattern' : 'background');
-    const tileIDs = coords ? coords : transform.coveringTiles({tileSize, terrain: painter.style.map.terrain});
+    const tileIDs = coords ? coords : transform.coveringTiles({tileSize, terrain: painter.style.map.terrain}); // JP: TODO: jak z tohoto vymlátit terén pryč?
 
     if (image) {
         context.activeTexture.set(gl.TEXTURE0);
