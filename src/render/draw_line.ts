@@ -16,6 +16,7 @@ import type {OverscaledTileID} from '../source/tile_id';
 import {clamp, nextPowerOfTwo} from '../util/util';
 import {renderColorRamp} from '../util/color_ramp';
 import {EXTENT} from '../data/extent';
+import {vec3} from 'gl-matrix';
 
 export function drawLine(painter: Painter, sourceCache: SourceCache, layer: LineStyleLayer, coords: Array<OverscaledTileID>, isRenderingToTexture: boolean) {
     if (painter.renderPass !== 'translucent') return;
@@ -41,6 +42,10 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
 
     const context = painter.context;
     const gl = context.gl;
+    const projectionManager = painter.style.map.projectionManager;
+
+    const normalizedCameraDirection: vec3 = [0, 0, 0];
+    vec3.normalize(normalizedCameraDirection, projectionManager.globeCameraPosition);
 
     let firstTile = true;
 
@@ -67,13 +72,13 @@ export function drawLine(painter: Painter, sourceCache: SourceCache, layer: Line
         }
 
         const rttCoord = isRenderingToTexture ? coord : null;
-        const projectionData = painter.style.map.projectionManager.getProjectionData(coord, rttCoord ? rttCoord.posMatrix : tile.tileID.posMatrix);
-        const pixelRatio = painter.style.map.projectionManager.getPixelScale(painter.style.map.transform);
+        const projectionData = projectionManager.getProjectionData(coord, rttCoord ? rttCoord.posMatrix : tile.tileID.posMatrix);
+        const pixelRatio = projectionManager.getPixelScale(painter.style.map.transform);
 
-        const uniformValues = image ? linePatternUniformValues(painter, tile, layer, pixelRatio, crossfade) :
-            dasharray ? lineSDFUniformValues(painter, tile, layer, pixelRatio, dasharray, crossfade) :
-                gradient ? lineGradientUniformValues(painter, tile, layer, pixelRatio, bucket.lineClipsArray.length) :
-                    lineUniformValues(painter, tile, layer, pixelRatio);
+        const uniformValues = image ? linePatternUniformValues(painter, tile, layer, pixelRatio, normalizedCameraDirection, crossfade) :
+            dasharray ? lineSDFUniformValues(painter, tile, layer, pixelRatio, normalizedCameraDirection, dasharray, crossfade) :
+                gradient ? lineGradientUniformValues(painter, tile, layer, pixelRatio, bucket.lineClipsArray.length, normalizedCameraDirection) :
+                    lineUniformValues(painter, tile, layer, pixelRatio, normalizedCameraDirection);
 
         if (image) {
             context.activeTexture.set(gl.TEXTURE0);

@@ -11,12 +11,14 @@ import type {LineStyleLayer} from '../../style/style_layer/line_style_layer';
 import type {Painter} from '../painter';
 import type {CrossfadeParameters} from '../../style/evaluation_parameters';
 import {OverscaledTileID} from '../../source/tile_id';
+import { vec3 } from 'gl-matrix';
 
 export type LineUniformsType = {
     'u_translation': Uniform2f;
     'u_ratio': Uniform1f;
     'u_device_pixel_ratio': Uniform1f;
     'u_units_to_pixels': Uniform2f;
+    'u_normalized_camera_direction': Uniform3f;
 };
 
 export type LineGradientUniformsType = {
@@ -24,6 +26,7 @@ export type LineGradientUniformsType = {
     'u_ratio': Uniform1f;
     'u_device_pixel_ratio': Uniform1f;
     'u_units_to_pixels': Uniform2f;
+    'u_normalized_camera_direction': Uniform3f;
     'u_image': Uniform1i;
     'u_image_height': Uniform1f;
 };
@@ -34,6 +37,7 @@ export type LinePatternUniformsType = {
     'u_ratio': Uniform1f;
     'u_device_pixel_ratio': Uniform1f;
     'u_units_to_pixels': Uniform2f;
+    'u_normalized_camera_direction': Uniform3f;
     'u_image': Uniform1i;
     'u_scale': Uniform3f;
     'u_fade': Uniform1f;
@@ -44,6 +48,7 @@ export type LineSDFUniformsType = {
     'u_ratio': Uniform1f;
     'u_device_pixel_ratio': Uniform1f;
     'u_units_to_pixels': Uniform2f;
+    'u_normalized_camera_direction': Uniform3f;
     'u_patternscale_a': Uniform2f;
     'u_patternscale_b': Uniform2f;
     'u_sdfgamma': Uniform1f;
@@ -57,7 +62,8 @@ const lineUniforms = (context: Context, locations: UniformLocations): LineUnifor
     'u_translation': new Uniform2f(context, locations.u_translation),
     'u_ratio': new Uniform1f(context, locations.u_ratio),
     'u_device_pixel_ratio': new Uniform1f(context, locations.u_device_pixel_ratio),
-    'u_units_to_pixels': new Uniform2f(context, locations.u_units_to_pixels)
+    'u_units_to_pixels': new Uniform2f(context, locations.u_units_to_pixels),
+    'u_normalized_camera_direction': new Uniform3f(context, locations.u_normalized_camera_direction)
 });
 
 const lineGradientUniforms = (context: Context, locations: UniformLocations): LineGradientUniformsType => ({
@@ -65,6 +71,7 @@ const lineGradientUniforms = (context: Context, locations: UniformLocations): Li
     'u_ratio': new Uniform1f(context, locations.u_ratio),
     'u_device_pixel_ratio': new Uniform1f(context, locations.u_device_pixel_ratio),
     'u_units_to_pixels': new Uniform2f(context, locations.u_units_to_pixels),
+    'u_normalized_camera_direction': new Uniform3f(context, locations.u_normalized_camera_direction),
     'u_image': new Uniform1i(context, locations.u_image),
     'u_image_height': new Uniform1f(context, locations.u_image_height)
 });
@@ -76,6 +83,7 @@ const linePatternUniforms = (context: Context, locations: UniformLocations): Lin
     'u_device_pixel_ratio': new Uniform1f(context, locations.u_device_pixel_ratio),
     'u_image': new Uniform1i(context, locations.u_image),
     'u_units_to_pixels': new Uniform2f(context, locations.u_units_to_pixels),
+    'u_normalized_camera_direction': new Uniform3f(context, locations.u_normalized_camera_direction),
     'u_scale': new Uniform3f(context, locations.u_scale),
     'u_fade': new Uniform1f(context, locations.u_fade)
 });
@@ -85,6 +93,7 @@ const lineSDFUniforms = (context: Context, locations: UniformLocations): LineSDF
     'u_ratio': new Uniform1f(context, locations.u_ratio),
     'u_device_pixel_ratio': new Uniform1f(context, locations.u_device_pixel_ratio),
     'u_units_to_pixels': new Uniform2f(context, locations.u_units_to_pixels),
+    'u_normalized_camera_direction': new Uniform3f(context, locations.u_normalized_camera_direction),
     'u_patternscale_a': new Uniform2f(context, locations.u_patternscale_a),
     'u_patternscale_b': new Uniform2f(context, locations.u_patternscale_b),
     'u_sdfgamma': new Uniform1f(context, locations.u_sdfgamma),
@@ -99,6 +108,7 @@ const lineUniformValues = (
     tile: Tile,
     layer: LineStyleLayer,
     ratioScale: number,
+    normalizedCameraDirection: vec3
 ): UniformValues<LineUniformsType> => {
     const transform = painter.transform;
 
@@ -109,7 +119,8 @@ const lineUniformValues = (
         'u_units_to_pixels': [
             1 / transform.pixelsToGLUnits[0],
             1 / transform.pixelsToGLUnits[1]
-        ]
+        ],
+        'u_normalized_camera_direction' : [normalizedCameraDirection[0], normalizedCameraDirection[1], normalizedCameraDirection[2]]
     };
 };
 
@@ -119,8 +130,9 @@ const lineGradientUniformValues = (
     layer: LineStyleLayer,
     imageHeight: number,
     ratioScale: number,
+    normalizedCameraDirection: vec3
 ): UniformValues<LineGradientUniformsType> => {
-    return extend(lineUniformValues(painter, tile, layer, ratioScale), {
+    return extend(lineUniformValues(painter, tile, layer, ratioScale, normalizedCameraDirection), {
         'u_image': 0,
         'u_image_height': imageHeight,
     });
@@ -131,6 +143,7 @@ const linePatternUniformValues = (
     tile: Tile,
     layer: LineStyleLayer,
     ratioScale: number,
+    normalizedCameraDirection: vec3,
     crossfade: CrossfadeParameters,
 ): UniformValues<LinePatternUniformsType> => {
     const transform = painter.transform;
@@ -141,6 +154,7 @@ const linePatternUniformValues = (
         // camera zoom ratio
         'u_ratio': ratioScale / pixelsToTileUnits(tile, 1, transform.zoom),
         'u_device_pixel_ratio': painter.pixelRatio,
+        'u_normalized_camera_direction' : [normalizedCameraDirection[0], normalizedCameraDirection[1], normalizedCameraDirection[2]],
         'u_image': 0,
         'u_scale': [tileZoomRatio, crossfade.fromScale, crossfade.toScale],
         'u_fade': crossfade.t,
@@ -156,6 +170,7 @@ const lineSDFUniformValues = (
     tile: Tile,
     layer: LineStyleLayer,
     ratioScale: number,
+    normalizedCameraDirection: vec3,
     dasharray: CrossFaded<Array<number>>,
     crossfade: CrossfadeParameters,
 ): UniformValues<LineSDFUniformsType> => {
@@ -171,7 +186,7 @@ const lineSDFUniformValues = (
     const widthA = posA.width * crossfade.fromScale;
     const widthB = posB.width * crossfade.toScale;
 
-    return extend(lineUniformValues(painter, tile, layer, ratioScale), {
+    return extend(lineUniformValues(painter, tile, layer, ratioScale, normalizedCameraDirection), {
         'u_patternscale_a': [tileRatio / widthA, -posA.height / 2],
         'u_patternscale_b': [tileRatio / widthB, -posB.height / 2],
         'u_sdfgamma': lineAtlas.width / (Math.min(widthA, widthB) * 256 * painter.pixelRatio) / 2,

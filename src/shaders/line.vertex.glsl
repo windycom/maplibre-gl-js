@@ -14,6 +14,10 @@ uniform mediump float u_ratio;
 uniform vec2 u_units_to_pixels;
 uniform lowp float u_device_pixel_ratio;
 
+#ifdef GLOBE
+uniform mediump vec3 u_normalized_camera_direction;
+#endif
+
 out vec2 v_normal;
 out vec2 v_width2;
 out float v_gamma_scale;
@@ -74,8 +78,27 @@ void main() {
     mediump vec2 offset2 = offset * a_extrude * scale * normal.y * mat2(t, -u, u, t);
 
     float adjustedThickness = projectLineThickness(pos.y);
-    vec4 projected_no_extrude = projectTile(pos + offset2 / u_ratio * adjustedThickness + u_translation);
-    vec4 projected_with_extrude = projectTile(pos + offset2 / u_ratio * adjustedThickness + u_translation + dist / u_ratio * adjustedThickness);
+    vec2 position_base = pos + offset2 / u_ratio * adjustedThickness + u_translation;
+
+    #ifdef GLOBE
+    // Prototype implementation of line thickness gain at grazing angles.
+    // The idea of this technique is to avoid line aliasing when viewed
+    // under grazing angles on the globe, by thickening the lines dynamically.
+    // This is fairly cheap, costing one vec3 uniform and a tiny bit of math,
+    // but I'm not sure if the effect results in a more pleasant map...
+    vec3 spherePos = projectToSphere(position_base);
+    float ndotv = dot(spherePos, u_normalized_camera_direction);
+    vec4 projected_no_extrude = interpolateProjection(position_base, spherePos, 0.0);
+    float sphereDistortion = 1.0;
+    if (ndotv > 0.0) {
+        sphereDistortion = mix(1.0, 1.0 / (ndotv * 0.95 + 0.05), u_projection_globeness * u_projection_globeness);
+    }
+    adjustedThickness *= sphereDistortion;
+    #else
+    vec4 projected_no_extrude = projectTile(position_base);
+    #endif
+
+    vec4 projected_with_extrude = projectTile(position_base + dist / u_ratio * adjustedThickness);
     gl_Position = projected_with_extrude;
 
     // calculate how much the perspective view squishes or stretches the extrude
@@ -85,6 +108,10 @@ void main() {
         float extrude_length_without_perspective = length(dist);
         float extrude_length_with_perspective = length((projected_with_extrude.xy - projected_no_extrude.xy) / projected_with_extrude.w * u_units_to_pixels);
         v_gamma_scale = extrude_length_without_perspective / extrude_length_with_perspective;
+        #ifdef GLOBE
+        // Prototype implementation of line thickness gain at grazing angles: We also need to adjust AA blur.
+        v_gamma_scale *= sphereDistortion;
+        #endif
     #endif
 
     v_width2 = vec2(outset, inset);
