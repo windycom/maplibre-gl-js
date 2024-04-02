@@ -1,37 +1,37 @@
-import packageJSON from '../package.json' assert {type: 'json'};
-import {Map} from './ui/map';
-import {NavigationControl} from './ui/control/navigation_control';
-import {GeolocateControl} from './ui/control/geolocate_control';
-import {AttributionControl} from './ui/control/attribution_control';
-import {LogoControl} from './ui/control/logo_control';
-import {ScaleControl} from './ui/control/scale_control';
-import {FullscreenControl} from './ui/control/fullscreen_control';
-import {TerrainControl} from './ui/control/terrain_control';
-import {Popup} from './ui/popup';
-import {Marker} from './ui/marker';
-import {Style} from './style/style';
+import Point from '@mapbox/point-geometry';
+import packageJSON from '../package.json' assert { type: 'json' };
 import {LngLat} from './geo/lng_lat';
 import {LngLatBounds} from './geo/lng_lat_bounds';
-import Point from '@mapbox/point-geometry';
 import {MercatorCoordinate} from './geo/mercator_coordinate';
-import {Evented} from './util/evented';
-import {config} from './util/config';
-import {Debug} from './util/debug';
-import {isSafari} from './util/util';
-import {setRTLTextPlugin, getRTLTextPluginStatus} from './source/rtl_text_plugin';
-import {WorkerPool} from './util/worker_pool';
-import {prewarm, clearPrewarmedResources} from './util/global_worker_pool';
-import {PerformanceUtils} from './util/performance';
-import {AJAXError} from './util/ajax';
-import type {RequestParameters, ResponseCallback} from './util/ajax';
-import type {Cancelable} from './types/cancelable';
-import {GeoJSONSource} from './source/geojson_source';
 import {CanvasSource} from './source/canvas_source';
+import {GeoJSONSource} from './source/geojson_source';
 import {ImageSource} from './source/image_source';
 import {RasterDEMTileSource} from './source/raster_dem_tile_source';
 import {RasterTileSource} from './source/raster_tile_source';
+import {getRTLTextPluginStatus, setRTLTextPlugin} from './source/rtl_text_plugin';
+import {OverscaledTileID} from './source/tile_id';
 import {VectorTileSource} from './source/vector_tile_source';
-import {VideoSource} from './source/video_source';
+import {Style} from './style/style';
+import type {Cancelable} from './types/cancelable';
+import {AttributionControl} from './ui/control/attribution_control';
+import {FullscreenControl} from './ui/control/fullscreen_control';
+import {GeolocateControl} from './ui/control/geolocate_control';
+import {LogoControl} from './ui/control/logo_control';
+import {NavigationControl} from './ui/control/navigation_control';
+import {ScaleControl} from './ui/control/scale_control';
+import {TerrainControl} from './ui/control/terrain_control';
+import {Map} from './ui/map';
+import {Marker} from './ui/marker';
+import {Popup} from './ui/popup';
+import type {RequestParameters, ResponseCallback} from './util/ajax';
+import {AJAXError} from './util/ajax';
+import {config} from './util/config';
+import {Debug} from './util/debug';
+import {Evented} from './util/evented';
+import {clearPrewarmedResources, prewarm} from './util/global_worker_pool';
+import {PerformanceUtils} from './util/performance';
+import {isSafari} from './util/util';
+import {WorkerPool} from './util/worker_pool';
 
 const version = packageJSON.version;
 
@@ -67,7 +67,7 @@ class MapLibreGL {
     static RasterDEMTileSource = RasterDEMTileSource;
     static RasterTileSource = RasterTileSource;
     static VectorTileSource = VectorTileSource;
-    static VideoSource = VideoSource;
+    static OverscaledTileID = OverscaledTileID;
     /**
      * Sets the map's [RTL text plugin](https://www.mapbox.com/mapbox-gl-js/plugins/#mapbox-gl-rtl-text).
      * Necessary for supporting the Arabic and Hebrew languages, which are written right-to-left.
