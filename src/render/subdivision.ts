@@ -95,17 +95,11 @@ class Subdivider {
             return fixWindingOrder(this._vertexBuffer, inputIndices);
         }
 
-        const finalIndices = [];
+        const finalVertices = [];
 
         // Iterate over all input triangles
         const numIndices = inputIndices.length;
         for (let primitiveIndex = 0; primitiveIndex < numIndices; primitiveIndex += 3) {
-            const triangleIndices: [number, number, number] = [
-                inputIndices[primitiveIndex + 0], // v0
-                inputIndices[primitiveIndex + 1], // v1
-                inputIndices[primitiveIndex + 2], // v2
-            ];
-
             const triangleVertices: [number, number, number, number, number, number] = [
                 this._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 0], // v0.x
                 this._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 1], // v0.y
@@ -141,15 +135,21 @@ class Subdivider {
 
             // Skip subdividing triangles that do not span multiple cells - just add them "as is".
             if (cellXmin === cellXmax && cellYmin === cellYmax) {
-                finalIndices.push(...triangleIndices);
+                finalVertices.push(...triangleVertices);
                 continue;
             }
 
             // Iterate over cell rows that intersect this triangle
             for (let cellRow = cellYmin; cellRow < cellYmax; cellRow++) {
-                const ring = this._scanlineGenerateVertexRingForCellRow(cellRow, triangleVertices, triangleIndices);
-                scanlineTriangulateVertexRing(this._vertexBuffer, ring, finalIndices);
+                const ring = this._scanlineGenerateVertexRingForCellRow(cellRow, triangleVertices);
+                scanlineTriangulateVertexRing(ring, finalVertices);
             }
+        }
+
+        const finalIndices = [];
+
+        for (let i = 0; i < finalVertices.length; i += 2) {
+            finalIndices.push(this._vertexToIndex(finalVertices[i], finalVertices[i + 1]));
         }
 
         return finalIndices;
@@ -159,13 +159,11 @@ class Subdivider {
      * Takes a triangle and a cell row index, returns a subdivided vertex ring of the intersection of the triangle and the cell row.
      * @param cellRow - Index of the cell row. A cell row of index `i` covert range from `i * granularityCellSize` to `(i + 1) * granularityCellSize`.
      * @param triangleVertices - An array of 6 elements, contains flattened positions of the triangle's vertices: `[v0x, v0y, v1x, v1y, v2x, v2y]`.
-     * @param triangleIndices - An array of 3 elements, contains the original indices of the triangle's vertices: `[index0, index1, index2]`.
      * @returns The resulting ring of vertex indices and the index (to the returned ring array) of the leftmost vertex in the ring.
      */
     private _scanlineGenerateVertexRingForCellRow(
         cellRow: number,
-        triangleVertices: [number, number, number, number, number, number],
-        triangleIndices: [number, number, number]
+        triangleVertices: [number, number, number, number, number, number]
     ) {
         const cellRowYTop = cellRow * this._granularityCellSize;
         const cellRowYBottom = cellRowYTop + this._granularityCellSize;
@@ -203,7 +201,7 @@ class Subdivider {
                 // But make sure to add its endpoint vertex if needed.
                 if (bY >= cellRowYTop && bY <= cellRowYBottom) {
                     // The edge endpoint is withing this row, add it to the ring
-                    ring.push(triangleIndices[(edgeIndex + 1) % 3]);
+                    ring.push(bX, bY);
                 }
                 continue;
             }
@@ -215,7 +213,7 @@ class Subdivider {
             if (!isParallelX && tEnter > 0) {
                 const x = aX + dirX * tEnter;
                 const y = aY + dirY * tEnter;
-                ring.push(this._vertexToIndex(x, y));
+                ring.push(x | 0, y | 0);
             }
 
             const enterX = aX + dirX * Math.max(tEnter, 0);
@@ -231,7 +229,7 @@ class Subdivider {
             if (!isParallelX && tExit < 1) {
                 const x = aX + dirX * tExit;
                 const y = aY + dirY * tExit;
-                ring.push(this._vertexToIndex(x, y));
+                ring.push(x | 0, y | 0);
             }
 
             // When to split inter-edge boundary segments?
@@ -259,7 +257,7 @@ class Subdivider {
 
             // Add endpoint vertex
             if (isParallelX || (bY >= cellRowYTop && bY <= cellRowYBottom)) {
-                ring.push(triangleIndices[(edgeIndex + 1) % 3]);
+                ring.push(bX, bY);
             }
             // Any edge that has endpoint outside this row or on its boundary gets
             // inter-edge vertices.
@@ -305,14 +303,14 @@ class Subdivider {
             for (let cellX = edgeSubdivisionLeftCellX; cellX <= edgeSubdivisionRightCellX; cellX++) {
                 const x = cellX * this._granularityCellSize;
                 const y = aY + dirY * (x - aX) / dirX;
-                ring.push(this._vertexToIndex(x, y));
+                ring.push(x | 0, y | 0);
             }
         } else {
             // Right to left
             for (let cellX = edgeSubdivisionRightCellX; cellX >= edgeSubdivisionLeftCellX; cellX--) {
                 const x = cellX * this._granularityCellSize;
                 const y = aY + dirY * (x - aX) / dirX;
-                ring.push(this._vertexToIndex(x, y));
+                ring.push(x | 0, y | 0);
             }
         }
     }
@@ -397,13 +395,13 @@ class Subdivider {
             // Left to right
             for (let cellX = boundarySubdivisionLeftCellX; cellX <= boundarySubdivisionRightCellX; cellX++) {
                 const x = cellX * this._granularityCellSize;
-                ring.push(this._vertexToIndex(x, boundaryY));
+                ring.push(x | 0, boundaryY | 0);
             }
         } else {
             // Right to left
             for (let cellX = boundarySubdivisionRightCellX; cellX >= boundarySubdivisionLeftCellX; cellX--) {
                 const x = cellX * this._granularityCellSize;
-                ring.push(this._vertexToIndex(x, boundaryY));
+                ring.push(x | 0, boundaryY | 0);
             }
         }
     }
@@ -894,12 +892,11 @@ export function fixWindingOrder(flattened: Array<number>, indices: Array<number>
 
 /**
  * Triangulates a ring of vertex indices. Appends to the supplied array of final triangle indices.
- * @param vertexBuffer - Flattened vertex coordinate array.
- * @param ring - Ordered ring of vertex indices to triangulate.
+ * @param ring - Ordered ring of vertex coordinates to triangulate.
  * @param leftmostIndex - The index of the leftmost vertex in the supplied ring.
- * @param finalIndices - Array of final triangle indices, into where the resulting triangles are appended.
+ * @param finalVertices - Array of final triangle vertices, into where the resulting triangles are appended.
  */
-export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring: Array<number>, finalIndices: Array<number>): void {
+export function scanlineTriangulateVertexRing(ring: Array<number>, finalVertices: Array<number>): void {
     // Triangulate the ring
     // It is guaranteed to be convex and ordered
     if (ring.length === 0) {
@@ -908,9 +905,9 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
 
     // Find the leftmost vertex in the ring
     let leftmostIndex = 0;
-    let leftmostX = vertexBuffer[ring[0] * 2];
-    for (let i = 1; i < ring.length; i++) {
-        const x = vertexBuffer[ring[i] * 2];
+    let leftmostX = ring[0];
+    for (let i = 1; i < ring.length / 2; i++) {
+        const x = ring[i * 2];
         if (x < leftmostX) {
             leftmostX = x;
             leftmostIndex = i;
@@ -919,7 +916,7 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
 
     // Traverse the ring in both directions from the leftmost vertex
     // Assume ring is in CCW order (to produce CCW triangles)
-    const ringVertexLength = ring.length;
+    const ringVertexLength = ring.length / 2;
     let lastEdgeA = leftmostIndex;
     let lastEdgeB = (lastEdgeA + 1) % ringVertexLength;
 
@@ -928,14 +925,14 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
         const candidateIndexB = (lastEdgeB + 1) % ringVertexLength;
 
         // Pick candidate, move edge
-        const candidateAx = vertexBuffer[ring[candidateIndexA] * 2];
-        const candidateAy = vertexBuffer[ring[candidateIndexA] * 2 + 1];
-        const candidateBx = vertexBuffer[ring[candidateIndexB] * 2];
-        const candidateBy = vertexBuffer[ring[candidateIndexB] * 2 + 1];
-        const lastEdgeAx = vertexBuffer[ring[lastEdgeA] * 2];
-        const lastEdgeAy = vertexBuffer[ring[lastEdgeA] * 2 + 1];
-        const lastEdgeBx = vertexBuffer[ring[lastEdgeB] * 2];
-        const lastEdgeBy = vertexBuffer[ring[lastEdgeB] * 2 + 1];
+        const candidateAx = ring[candidateIndexA * 2];
+        const candidateAy = ring[candidateIndexA * 2 + 1];
+        const candidateBx = ring[candidateIndexB * 2];
+        const candidateBy = ring[candidateIndexB * 2 + 1];
+        const lastEdgeAx = ring[lastEdgeA * 2];
+        const lastEdgeAy = ring[lastEdgeA * 2 + 1];
+        const lastEdgeBx = ring[lastEdgeB * 2];
+        const lastEdgeBy = ring[lastEdgeB * 2 + 1];
 
         let pickA = false;
 
@@ -961,11 +958,14 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
 
         if (pickA) {
             // Pick candidate A
-            const c = ring[candidateIndexA];
-            const a = ring[lastEdgeA];
-            const b = ring[lastEdgeB];
-            if (c !== a && c !== b && a !== b) {
-                finalIndices.push(b, a, c);
+            const cx = ring[candidateIndexA * 2];
+            const cy = ring[candidateIndexA * 2 + 1];
+            const ax = ring[lastEdgeA * 2];
+            const ay = ring[lastEdgeA * 2 + 1];
+            const bx = ring[lastEdgeB * 2];
+            const by = ring[lastEdgeB * 2 + 1];
+            if ((cx !== ax || cy !== ay) && (cx !== bx || cy !== by) && (ax !== bx || ay !== by)) {
+                finalVertices.push(bx, by, ax, ay, cx, cy);
             }
             lastEdgeA--;
             if (lastEdgeA < 0) {
@@ -973,11 +973,14 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
             }
         } else {
             // Pick candidate B
-            const c = ring[candidateIndexB];
-            const a = ring[lastEdgeA];
-            const b = ring[lastEdgeB];
-            if (c !== a && c !== b && a !== b) {
-                finalIndices.push(b, a, c);
+            const cx = ring[candidateIndexB * 2];
+            const cy = ring[candidateIndexB * 2 + 1];
+            const ax = ring[lastEdgeA * 2];
+            const ay = ring[lastEdgeA * 2 + 1];
+            const bx = ring[lastEdgeB * 2];
+            const by = ring[lastEdgeB * 2 + 1];
+            if ((cx !== ax || cy !== ay) && (cx !== bx || cy !== by) && (ax !== bx || ay !== by)) {
+                finalVertices.push(bx, by, ax, ay, cx, cy);
             }
             lastEdgeB++;
             if (lastEdgeB >= ringVertexLength) {
@@ -988,5 +991,58 @@ export function scanlineTriangulateVertexRing(vertexBuffer: Array<number>, ring:
         if (candidateIndexA === candidateIndexB) {
             break; // We ran out of ring vertices
         }
+    }
+}
+
+class VertexIndexer {
+    /**
+     * Flattened vertex positions (xyxyxy).
+     */
+    private _vertexBuffer: Array<number> = [];
+
+    /**
+     * Map of "vertex x and y coordinate" to "index of such vertex".
+     */
+    private _vertexDictionary: Map<number, number> = new Map<number, number>();
+
+    private _getKey(x: number, y: number) {
+        // Assumes signed 16 bit positions.
+        x = x + 32768;
+        y = y + 32768;
+        return (x << 16) | (y << 0);
+    }
+
+    /**
+     * Returns an index into the internal vertex buffer for a vertex at the given coordinates.
+     * If the internal vertex buffer contains no such vertex, then it is added.
+     */
+    private _vertexToIndex(x: number, y: number): number {
+        if (x < -32768 || y < -32768 || x > 32767 || y > 32767) {
+            throw new Error('Vertex coordinates are out of signed 16 bit integer range.');
+        }
+        const xInt = Math.round(x) | 0;
+        const yInt = Math.round(y) | 0;
+        const key = this._getKey(xInt, yInt);
+        if (this._vertexDictionary.has(key)) {
+            return this._vertexDictionary.get(key);
+        }
+        const index = this._vertexBuffer.length / 2;
+        this._vertexDictionary.set(key, index);
+        this._vertexBuffer.push(xInt, yInt);
+        return index;
+    }
+
+    public static generateIndexedVertexBuffer(flattened: Array<number>) {
+        const indexer = new VertexIndexer();
+        const indices = [];
+        for (let i = 0; i < flattened.length; i += 2) {
+            const x = flattened[i * 2];
+            const y = flattened[i * 2 + 1];
+            indices.push(indexer._vertexToIndex(x, y));
+        }
+        return {
+            vertices: indexer._vertexBuffer,
+            indices
+        };
     }
 }
