@@ -24,7 +24,7 @@ import {ProjectionErrorMeasurement} from './globe_projection_error_measurement';
  * The size of border region for stencil masks, in internal tile coordinates.
  * Used for globe rendering.
  */
-const EXTENT_STENCIL_BORDER = EXTENT / 128;
+const EXTENT_STENCIL_BORDER = EXTENT / 64;
 
 const globeTransitionTimeSeconds = 0.5;
 const zoomTransitionTimeSeconds = 0.5;

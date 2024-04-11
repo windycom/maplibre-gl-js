@@ -438,11 +438,12 @@ class Subdivider {
     }
 
     /**
-     * Adds pole geometry if needed.
+     * Adds border and pole geometry if needed.
+     * @param subdividedOuterOutline - Array of line indices for the subdivided outline of the polygon's outer ring.
      * @param subdividedTriangles - Array of generated triangle indices, new pole geometry is appended here.
      */
-    private _handlePoles(subdividedTriangles: Array<number>) {
-        // Add pole vertices if the tile is at north/south mercator edge
+    private _handleBordersAndPoles(subdividedOuterOutline: Array<number>, subdividedTriangles: Array<number>) {
+        // Is tile at north/south mercator edge?
         let north = false;
         let south = false;
         if (this._canonical) {
@@ -453,6 +454,9 @@ class Subdivider {
                 south = true;
             }
         }
+        // Do not add borders to edges that will get pole geometry
+        this._handleBorders(subdividedOuterOutline, subdividedTriangles, !north, !south);
+        // Add pole vertices if the tile is at north/south mercator edge
         if (north || south) {
             this._fillPoles(subdividedTriangles, north, south);
         }
@@ -563,6 +567,138 @@ class Subdivider {
         }
     }
 
+    private _triangulateRingSimple(ring: Array<number>, targetIndices: Array<number>): void {
+        // Check the winding order of the first triangle
+        const firstX = this._vertexBuffer[ring[0] * 2];
+        const firstY = this._vertexBuffer[ring[0] * 2 + 1];
+        const e0x = this._vertexBuffer[ring[1] * 2] - firstX;
+        const e0y = this._vertexBuffer[ring[1] * 2 + 1] - firstY;
+        const e1x = this._vertexBuffer[ring[2] * 2] - firstX;
+        const e1y = this._vertexBuffer[ring[2] * 2 + 1] - firstY;
+        const crossProduct = e0x * e1y - e0y * e1x;
+        const flip = crossProduct > 0;
+
+        for (let i = 2; i < ring.length; i++) {
+            const a = ring[0];
+            const b = ring[i - 1];
+            const c = ring[i];
+
+            if (flip) {
+                targetIndices.push(a, b, c);
+            } else {
+                targetIndices.push(a, c, b);
+            }
+        }
+    }
+
+    /**
+     * Adds geometry that extends slightly beyond tile border for all polygon edges that touch or go beyond tile border.
+     * Optionally includes/omits the top or bottom borders for compatibility with pole geometry.
+     * @param exteriorOutlineIndices - Line indices for the polygon's exterior ring.
+     * @param triangleIndices - Array of final triangle indices. New geometry will be appended here.
+     * @param allowTop - When true, border geometry for the top (Y \<= 0) edge is generated.
+     * @param allowBottom - When true, border geometry for the bottom (Y \>= EXTENT) edge is generated.
+     */
+    private _handleBorders(exteriorOutlineIndices: Array<number>, triangleIndices: Array<number>, allowTop: boolean, allowBottom: boolean): void {
+        const border = EXTENT / 16;
+        const borderMin = -border;
+        const borderMax = EXTENT + border;
+
+        for (let lineStartIndex = 0; lineStartIndex < exteriorOutlineIndices.length; lineStartIndex += 2) {
+            const line0 = exteriorOutlineIndices[lineStartIndex];
+            const line1 = exteriorOutlineIndices[lineStartIndex + 1];
+            const v0x = this._vertexBuffer[line0 * 2];
+            const v0y = this._vertexBuffer[line0 * 2 + 1];
+            const v1x = this._vertexBuffer[line1 * 2];
+            const v1y = this._vertexBuffer[line1 * 2 + 1];
+
+            if (v0x <= 0 && v1x <= 0) {
+                // Left border
+                this._triangulateRingSimple([
+                    line0,
+                    line1,
+                    this._vertexToIndex(borderMin, v1y),
+                    this._vertexToIndex(borderMin, v0y),
+                ], triangleIndices);
+            }
+            if (v0x >= EXTENT && v1x >= EXTENT) {
+                // Right border
+                this._triangulateRingSimple([
+                    line0,
+                    line1,
+                    this._vertexToIndex(borderMax, v1y),
+                    this._vertexToIndex(borderMax, v0y),
+                ], triangleIndices);
+            }
+            if (allowTop && v0y <= 0 && v1y <= 0) {
+                // Top border
+                this._triangulateRingSimple([
+                    line0,
+                    line1,
+                    this._vertexToIndex(v1x, borderMin),
+                    this._vertexToIndex(v0x, borderMin),
+                ], triangleIndices);
+            }
+            if (allowBottom && v0y >= EXTENT && v1y >= EXTENT) {
+                // Bottom border
+                this._triangulateRingSimple([
+                    line0,
+                    line1,
+                    this._vertexToIndex(v1x, borderMax),
+                    this._vertexToIndex(v0x, borderMax),
+                ], triangleIndices);
+            }
+        }
+
+        // Corners
+        for (let vertexIndex = 0; vertexIndex < exteriorOutlineIndices.length; vertexIndex++) {
+            const index = exteriorOutlineIndices[vertexIndex];
+            const vx = this._vertexBuffer[index * 2];
+            const vy = this._vertexBuffer[index * 2 + 1];
+
+            if (allowTop && vx <= 0 && vy <= 0) {
+                // Top-left border
+                this._triangulateRingSimple([
+                    index,
+                    this._vertexToIndex(borderMin, borderMin),
+                    this._vertexToIndex(vx, borderMin),
+                    this._vertexToIndex(vx, vy),
+                    this._vertexToIndex(borderMin, vy),
+                ], triangleIndices);
+            }
+            if (allowTop && vx >= EXTENT && vy <= 0) {
+                // Top-right border
+                this._triangulateRingSimple([
+                    index,
+                    this._vertexToIndex(vx, borderMin),
+                    this._vertexToIndex(borderMax, borderMin),
+                    this._vertexToIndex(borderMax, vy),
+                    this._vertexToIndex(vx, vy),
+                ], triangleIndices);
+            }
+            if (allowBottom && vx <= 0 && vy >= EXTENT) {
+                // Bottom-left border
+                this._triangulateRingSimple([
+                    index,
+                    this._vertexToIndex(borderMin, vy),
+                    this._vertexToIndex(vx, vy),
+                    this._vertexToIndex(vx, borderMax),
+                    this._vertexToIndex(borderMin, borderMax),
+                ], triangleIndices);
+            }
+            if (allowBottom && vx >= EXTENT && vy >= EXTENT) {
+                // Bottom-right border
+                this._triangulateRingSimple([
+                    index,
+                    this._vertexToIndex(vx, vy),
+                    this._vertexToIndex(borderMax, vy),
+                    this._vertexToIndex(borderMax, borderMax),
+                    this._vertexToIndex(vx, borderMax),
+                ], triangleIndices);
+            }
+        }
+    }
+
     /**
      * Adds all vertices in the supplied flattened vertex buffer into the internal vertex buffer.
      */
@@ -570,6 +706,23 @@ class Subdivider {
         for (let i = 0; i < flattened.length; i += 2) {
             this._vertexToIndex(flattened[i], flattened[i + 1]);
         }
+    }
+
+    /**
+     * Returns whether the polygon is entirely contained inside the tile, without even touching its edges.
+     * @param polygon - The list of polygon rings, the first being the outside ring.
+     */
+    private polygonEntirelyInsideTile(polygon: Array<Array<Point>>): boolean {
+        const outerRing = polygon[0];
+        const borderMin = 0;
+        const borderMax = EXTENT;
+        for (let i = 0; i < outerRing.length; i++) {
+            const p = outerRing[i];
+            if (p.x <= borderMin || p.y <= borderMin || p.x >= borderMax || p.y >= borderMax) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -600,17 +753,26 @@ class Subdivider {
             console.error(e);
         }
 
+        const entirelyInside = this.polygonEntirelyInsideTile(polygon);
+
         // Subdivide lines
-        let subdividedLines: Array<Array<number>> = [];
+        let subdividedLines: Array<Array<number>> = [[]];
         if (generateOutlineLines) {
             subdividedLines = this._generateOutline(polygon);
+        } else {
+            if (!entirelyInside) {
+                // We need the exterior ring outline for generating borders and poles
+                subdividedLines = this._generateOutline([polygon[0]]);
+            }
         }
 
-        // Ensure no vertex has the special value used for pole vertices
-        this._ensureNoPoleVertices();
+        if (!entirelyInside) {
+            // Ensure no vertex has the special value used for pole vertices
+            this._ensureNoPoleVertices();
 
-        // Add pole geometry if needed
-        this._handlePoles(subdividedTriangles);
+            // Add pole geometry if needed
+            this._handleBordersAndPoles(subdividedLines[0], subdividedTriangles);
+        }
 
         return {
             verticesFlattened: this._vertexBuffer,
@@ -901,6 +1063,7 @@ export function fixWindingOrder(flattened: Array<number>, indices: Array<number>
 
 /**
  * Triangulates a ring of vertex indices. Appends to the supplied array of final triangle indices.
+ * Triangulates the ring in such a way as to preferably generate quads.
  * @param vertexBuffer - Flattened vertex coordinate array.
  * @param ring - Ordered ring of vertex indices to triangulate.
  * @param leftmostIndex - The index of the leftmost vertex in the supplied ring.
