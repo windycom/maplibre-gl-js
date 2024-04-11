@@ -101,7 +101,8 @@ export const shaders = {
     terrain: compile(terrainFrag, terrainVert),
     terrainDepth: compile(terrainDepthFrag, terrainVert),
     terrainCoords: compile(terrainCoordsFrag, terrainVert),
-    projectionErrorMeasurement: compile(projectionErrorMeasurementFrag, projectionErrorMeasurementVert)
+    projectionErrorMeasurement: compile(projectionErrorMeasurementFrag, projectionErrorMeasurementVert),
+    solidColor: compile(backgroundFrag, clippingMaskVert),
 };
 
 // Expand #pragmas to #ifdefs.

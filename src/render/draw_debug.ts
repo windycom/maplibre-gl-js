@@ -9,6 +9,9 @@ import type {Painter} from './painter';
 import type {SourceCache} from '../source/source_cache';
 import type {OverscaledTileID} from '../source/tile_id';
 import {Style} from '../style/style';
+import {mat4} from 'gl-matrix';
+import {ProjectionData} from './program/projection_program';
+import {backgroundUniformValues, backgroundUniforms} from './program/background_program';
 
 const topColor = new Color(1, 0, 0, 1);
 const btmColor = new Color(0, 1, 0, 1);
@@ -145,4 +148,45 @@ export function selectDebugSource(style: Style, zoom: number): SourceCache | nul
         otherSources.forEach((source) => considerSource(source));
     }
     return selectedSource;
+}
+
+export function drawDebugStencilColors(painter: Painter) {
+    const context = painter.context;
+    const gl = context.gl;
+
+    const matrix = mat4.create();
+    mat4.ortho(matrix, 0, painter.width, painter.height, 0, 0, 1);
+    mat4.scale(matrix, matrix, [gl.drawingBufferWidth, gl.drawingBufferHeight, 0]);
+
+    // Note: we force a simple mercator projection for the shader, since we want to draw a fullscreen quad.
+    const projectionData: ProjectionData = {
+        'u_projection_matrix': matrix,
+        'u_projection_tile_mercator_coords': [0, 0, 1, 1],
+        'u_projection_clipping_plane': [0, 0, 0, 0],
+        'u_projection_transition': 0.0,
+        'u_projection_fallback_matrix': matrix,
+    };
+    const program = painter.useProgram('solidColor', null, true);
+
+    for (let i = 0; i < 0xff; i++) {
+        const color = new Color(
+            (i & 0x7) / 7.0,
+            ((i >> 3) & 0x7) / 7.0,
+            ((i >> 6) & 0x3) / 3.0 * 0.8 + 0.2,
+            1.0
+        );
+
+        const uniforms = backgroundUniformValues(0.5, color);
+
+        program.draw(
+            context, gl.TRIANGLES,
+            DepthMode.disabled,
+            new StencilMode({func: gl.EQUAL, mask: 0xff}, i, 0xff, gl.KEEP, gl.KEEP, gl.KEEP),
+            ColorMode.alphaBlended,
+            CullFaceMode.disabled,
+            uniforms, null, projectionData,
+            '$clipping', painter.viewportBuffer,
+            painter.quadTriangleIndexBuffer, painter.viewportSegments
+        );
+    }
 }

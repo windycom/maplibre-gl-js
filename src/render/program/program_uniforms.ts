@@ -44,4 +44,5 @@ export const programUniforms = {
     terrainDepth: terrainDepthUniforms,
     terrainCoords: terrainCoordsUniforms,
     projectionErrorMeasurement: projectionErrorMeasurementUniforms,
+    solidColor: backgroundUniforms,
 };
