@@ -23,8 +23,8 @@ export const MAX_VALID_LATITUDE = 85.051129;
 export class Transform {
     private _tileSize: number;
     private _tileZoom: number;
-    lngRange: [number, number];
-    latRange: [number, number];
+    private _lngRange: [number, number];
+    private _latRange: [number, number];
     private _scale: number;
     private _width: number;
     private _height: number;
@@ -43,15 +43,16 @@ export class Transform {
      */
     private _cameraToCenterDistance: number;
     private _mercatorMatrix: mat4;
-    projMatrix: mat4;
-    invProjMatrix: mat4;
+    private _projMatrix: mat4;
+    private _invProjMatrix: mat4;
     private _alignedProjMatrix: mat4;
     private _pixelMatrix: mat4;
     private _pixelMatrix3D: mat4;
     private _pixelMatrixInverse: mat4;
-    glCoordMatrix: mat4;
-    labelPlaneMatrix: mat4;
-    minElevationForCurrentTile: number;
+    private _glCoordMatrix: mat4;
+    private _labelPlaneMatrix: mat4;
+
+    public minElevationForCurrentTile: number;
 
     /**
      * Vertical field of view in radians.
@@ -108,7 +109,7 @@ export class Transform {
 
     public apply(that: Transform) {
         this._tileSize = that._tileSize;
-        this.latRange = that.latRange;
+        this._latRange = that._latRange;
         this._width = that._width;
         this._height = that._height;
         this._center = that._center;
@@ -128,6 +129,15 @@ export class Transform {
     get tileSize(): number { return this._tileSize; }
 
     get tileZoom(): number { return this._tileZoom; }
+
+    get lngRange(): [number, number] { return this._lngRange; }
+
+    get latRange(): [number, number] { return this._latRange; }
+
+    get projMatrix(): mat4 { return this._projMatrix; }
+    get invProjMatrix(): mat4 { return this._invProjMatrix; }
+    get glCoordMatrix(): mat4 { return this._glCoordMatrix; }
+    get labelPlaneMatrix(): mat4 { return this._labelPlaneMatrix; }
 
     /**
      * Width in pixels. Set using {@link resize}.
@@ -393,7 +403,7 @@ export class Transform {
         const numTiles = Math.pow(2, z);
         const cameraPoint = [numTiles * cameraCoord.x, numTiles * cameraCoord.y, 0];
         const centerPoint = [numTiles * centerCoord.x, numTiles * centerCoord.y, 0];
-        const cameraFrustum = Frustum.fromInvProjectionMatrix(this.invProjMatrix, this.worldSize, z);
+        const cameraFrustum = Frustum.fromInvProjectionMatrix(this._invProjMatrix, this.worldSize, z);
 
         // No change of LOD behavior for pitch lower than 60 and when there is no top padding: return only tile ids from the requested zoom level
         let minZoom = options.minzoom || 0;
@@ -714,10 +724,10 @@ export class Transform {
      * @returns max bounds
      */
     public getMaxBounds(): LngLatBounds | null {
-        if (!this.latRange || this.latRange.length !== 2 ||
-            !this.lngRange || this.lngRange.length !== 2) return null;
+        if (!this._latRange || this._latRange.length !== 2 ||
+            !this._lngRange || this._lngRange.length !== 2) return null;
 
-        return new LngLatBounds([this.lngRange[0], this.latRange[0]], [this.lngRange[1], this.latRange[1]]);
+        return new LngLatBounds([this._lngRange[0], this._latRange[0]], [this._lngRange[1], this._latRange[1]]);
     }
 
     /**
@@ -736,12 +746,12 @@ export class Transform {
      */
     public setMaxBounds(bounds?: LngLatBounds | null): void {
         if (bounds) {
-            this.lngRange = [bounds.getWest(), bounds.getEast()];
-            this.latRange = [bounds.getSouth(), bounds.getNorth()];
+            this._lngRange = [bounds.getWest(), bounds.getEast()];
+            this._latRange = [bounds.getSouth(), bounds.getNorth()];
             this._constrain();
         } else {
-            this.lngRange = null;
-            this.latRange = [-MAX_VALID_LATITUDE, MAX_VALID_LATITUDE];
+            this._lngRange = null;
+            this._latRange = [-MAX_VALID_LATITUDE, MAX_VALID_LATITUDE];
         }
     }
 
@@ -763,7 +773,7 @@ export class Transform {
         const posMatrix = mat4.identity(new Float64Array(16) as any);
         mat4.translate(posMatrix, posMatrix, [unwrappedX * scale, canonical.y * scale, 0]);
         mat4.scale(posMatrix, posMatrix, [scale / EXTENT, scale / EXTENT, 1]);
-        mat4.multiply(posMatrix, aligned ? this._alignedProjMatrix : this.projMatrix, posMatrix);
+        mat4.multiply(posMatrix, aligned ? this._alignedProjMatrix : this._projMatrix, posMatrix);
 
         cache[posMatrixKey] = new Float32Array(posMatrix);
         return cache[posMatrixKey];
@@ -786,7 +796,7 @@ export class Transform {
             zoom
         };
 
-        let lngRange = this.lngRange;
+        let lngRange = this._lngRange;
 
         if (!this._renderWorldCopies && lngRange === null) {
             const almost180 = 180 - 1e-10;
@@ -802,8 +812,8 @@ export class Transform {
         let scaleX = 0;
         const {x: screenWidth, y: screenHeight} = this.size;
 
-        if (this.latRange) {
-            const latRange = this.latRange;
+        if (this._latRange) {
+            const latRange = this._latRange;
             minY = mercatorYfromLat(latRange[1]) * worldSize;
             maxY = mercatorYfromLat(latRange[0]) * worldSize;
             const shouldZoomIn = maxY - minY < screenHeight;
@@ -843,7 +853,7 @@ export class Transform {
             return result;
         }
 
-        if (this.latRange) {
+        if (this._latRange) {
             const h2 = screenHeight / 2;
             if (originalY - h2 < minY) modifiedY = minY + h2;
             if (originalY + h2 > maxY) modifiedY = maxY - h2;
@@ -895,13 +905,13 @@ export class Transform {
         let m = mat4.identity(new Float64Array(16) as any);
         mat4.scale(m, m, [this._width / 2, -this._height / 2, 1]);
         mat4.translate(m, m, [1, -1, 0]);
-        this.labelPlaneMatrix = m;
+        this._labelPlaneMatrix = m;
 
         m = mat4.identity(new Float64Array(16) as any);
         mat4.scale(m, m, [1, -1, 1]);
         mat4.translate(m, m, [-1, -1, 0]);
         mat4.scale(m, m, [2 / this._width, 2 / this._height, 1]);
-        this.glCoordMatrix = m;
+        this._glCoordMatrix = m;
 
         // Calculate the camera to sea-level distance in pixel in respect of terrain
         const cameraToSeaLevelDistance = this._cameraToCenterDistance + this._elevation * this._pixelPerMeter / Math.cos(this._pitch);
@@ -960,15 +970,15 @@ export class Transform {
         mat4.scale(m, m, [1, 1, this._pixelPerMeter]);
 
         // matrix for conversion from world space to screen coordinates in 2D
-        this._pixelMatrix = mat4.multiply(new Float64Array(16) as any, this.labelPlaneMatrix, m);
+        this._pixelMatrix = mat4.multiply(new Float64Array(16) as any, this._labelPlaneMatrix, m);
 
         // matrix for conversion from world space to clip space (-1 .. 1)
         mat4.translate(m, m, [0, 0, -this.elevation]); // elevate camera over terrain
-        this.projMatrix = m;
-        this.invProjMatrix = mat4.invert([] as any, m);
+        this._projMatrix = m;
+        this._invProjMatrix = mat4.invert([] as any, m);
 
         // matrix for conversion from world space to screen coordinates in 3D
-        this._pixelMatrix3D = mat4.multiply(new Float64Array(16) as any, this.labelPlaneMatrix, m);
+        this._pixelMatrix3D = mat4.multiply(new Float64Array(16) as any, this._labelPlaneMatrix, m);
 
         // Make a second projection matrix that is aligned to a pixel grid for rendering raster tiles.
         // We're rounding the (floating point) x/y values to achieve to avoid rendering raster images to fractional
@@ -1066,7 +1076,7 @@ export class Transform {
     public lngLatToCameraDepth(lngLat: LngLat, elevation: number) {
         const coord = this._locationCoordinate(lngLat);
         const p = [coord.x * this.worldSize, coord.y * this.worldSize, elevation, 1] as vec4;
-        vec4.transformMat4(p, p, this.projMatrix);
+        vec4.transformMat4(p, p, this._projMatrix);
         return (p[2] / p[3]);
     }
 }
