@@ -205,7 +205,7 @@ export class GlobeProjection implements Projection {
         // Construct a completely separate matrix for globe view
         const globeMatrix = new Float64Array(16) as any;
         const globeMatrixUncorrected = new Float64Array(16) as any;
-        mat4.perspective(globeMatrix, transform.fov / Math.PI * 180.0, transform.width / transform.height, 0.5, transform.cameraToCenterDistance + globeRadiusPixels * 2.0); // just set the far plane far enough - we will calculate our own z in the vertex shader anyway
+        mat4.perspective(globeMatrix, transform.fov * Math.PI / 180.0, transform.width / transform.height, 0.5, transform.cameraToCenterDistance + globeRadiusPixels * 2.0); // just set the far plane far enough - we will calculate our own z in the vertex shader anyway
         mat4.translate(globeMatrix, globeMatrix, [0, 0, -transform.cameraToCenterDistance]);
         mat4.rotateX(globeMatrix, globeMatrix, -transform.pitchRadians);
         mat4.rotateZ(globeMatrix, globeMatrix, -transform.angle);
