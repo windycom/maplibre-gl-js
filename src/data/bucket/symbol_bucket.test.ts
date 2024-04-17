@@ -29,7 +29,7 @@ const feature = vt.layers.place_label.feature(10);
 const collisionBoxArray = new CollisionBoxArray();
 const transform = new Transform();
 transform.resize(100, 100);
-transform.cameraToCenterDistance = 100;
+(transform as any)._cameraToCenterDistance = 100;
 
 const stacks = {'Test': glyphs} as any as {
     [_: string]: {

@@ -21,11 +21,11 @@ export const MAX_VALID_LATITUDE = 85.051129;
  * scaled, rotated, and zoomed.
  */
 export class Transform {
-    tileSize: number;
-    tileZoom: number;
+    private _tileSize: number;
+    private _tileZoom: number;
     lngRange: [number, number];
     latRange: [number, number];
-    scale: number;
+    private _scale: number;
     private _width: number;
     private _height: number;
 
@@ -34,14 +34,14 @@ export class Transform {
      */
     private _angle: number;
     private _rotationMatrix: mat2;
-    pixelsToGLUnits: [number, number];
+    private _pixelsToGLUnits: [number, number];
 
     /**
      * Distance from camera origin to view plane, in pixels.
      * Calculated using vertical fov and viewport height.
      * Center is considered to be in the middle of the viewport.
      */
-    cameraToCenterDistance: number;
+    private _cameraToCenterDistance: number;
     private _mercatorMatrix: mat4;
     projMatrix: mat4;
     invProjMatrix: mat4;
@@ -74,7 +74,7 @@ export class Transform {
     private _alignedPosMatrixCache: {[_: string]: mat4};
 
     constructor(minZoom?: number, maxZoom?: number, minPitch?: number, maxPitch?: number, renderWorldCopies?: boolean) {
-        this.tileSize = 512; // constant
+        this._tileSize = 512; // constant
 
         this._renderWorldCopies = renderWorldCopies === undefined ? true : !!renderWorldCopies;
         this._minZoom = minZoom || 0;
@@ -107,7 +107,7 @@ export class Transform {
     }
 
     public apply(that: Transform) {
-        this.tileSize = that.tileSize;
+        this._tileSize = that._tileSize;
         this.latRange = that.latRange;
         this._width = that._width;
         this._height = that._height;
@@ -122,6 +122,12 @@ export class Transform {
         this._edgeInsets = that._edgeInsets.clone();
         this._calcMatrices();
     }
+
+    get cameraToCenterDistance(): number { return this._cameraToCenterDistance; }
+
+    get tileSize(): number { return this._tileSize; }
+
+    get tileZoom(): number { return this._tileZoom; }
 
     /**
      * Width in pixels. Set using {@link resize}.
@@ -172,9 +178,13 @@ export class Transform {
         this._renderWorldCopies = renderWorldCopies;
     }
 
+    get pixelsToGLUnits(): [number, number] { return this._pixelsToGLUnits; }
+
     get worldSize(): number {
-        return this.tileSize * this.scale;
+        return this._tileSize * this._scale;
     }
+
+    get scale(): number { return this._scale; }
 
     get centerOffset(): Point {
         return this.centerPoint._sub(this.size._div(2));
@@ -235,8 +245,8 @@ export class Transform {
         if (this._zoom === constrainedZoom) return;
         this._unmodified = false;
         this._zoom = constrainedZoom;
-        this.tileZoom = Math.max(0, Math.floor(constrainedZoom));
-        this.scale = this.zoomScale(constrainedZoom);
+        this._tileZoom = Math.max(0, Math.floor(constrainedZoom));
+        this._scale = this.zoomScale(constrainedZoom);
         this._constrain();
         this._calcMatrices();
     }
@@ -322,7 +332,7 @@ export class Transform {
         tileSize: number;
     }): number {
         const z = (options.roundZoom ? Math.round : Math.floor)(
-            this.zoom + this.scaleZoom(this.tileSize / options.tileSize)
+            this.zoom + this.scaleZoom(this._tileSize / options.tileSize)
         );
         // At negative zoom levels load tiles from z0 because negative tile zoom levels don't exist.
         return Math.max(0, z);
@@ -392,7 +402,7 @@ export class Transform {
             minZoom = z;
 
         // There should always be a certain number of maximum zoom level tiles surrounding the center location in 2D or in front of the camera in 3D
-        const radiusOfMaxLvlLodInTiles = options.terrain ? 2 / Math.min(this.tileSize, options.tileSize) * this.tileSize : 3;
+        const radiusOfMaxLvlLodInTiles = options.terrain ? 2 / Math.min(this._tileSize, options.tileSize) * this._tileSize : 3;
 
         const newRootTile = (wrap: number): any => {
             return {
@@ -487,7 +497,7 @@ export class Transform {
         this._width = width;
         this._height = height;
 
-        this.pixelsToGLUnits = [2 / width, -2 / height];
+        this._pixelsToGLUnits = [2 / width, -2 / height];
         this._constrain();
         this._calcMatrices();
     }
@@ -525,7 +535,7 @@ export class Transform {
         altitude: number;
     } {
         const lngLat = this.pointLocation(this._getCameraPoint());
-        const altitude = Math.cos(this._pitch) * this.cameraToCenterDistance / this._pixelPerMeter;
+        const altitude = Math.cos(this._pitch) * this._cameraToCenterDistance / this._pixelPerMeter;
         return {lngLat, altitude: altitude + this.elevation};
     }
 
@@ -537,11 +547,11 @@ export class Transform {
      */
     public recalculateZoom(terrain: Terrain): void {
         const origElevation = this.elevation;
-        const origAltitude = Math.cos(this._pitch) * this.cameraToCenterDistance / this._pixelPerMeter;
+        const origAltitude = Math.cos(this._pitch) * this._cameraToCenterDistance / this._pixelPerMeter;
 
         // find position the camera is looking on
         const center = this.pointLocation(this.centerPoint, terrain);
-        const elevation = terrain.getElevationForLngLatZoom(center, this.tileZoom);
+        const elevation = terrain.getElevationForLngLatZoom(center, this._tileZoom);
         const deltaElevation = this.elevation - elevation;
         if (!deltaElevation) return;
 
@@ -549,11 +559,11 @@ export class Transform {
         // this means the camera stays at the same total height.
         const requiredAltitude = origAltitude + origElevation - elevation;
         // Since altitude = Math.cos(this._pitch) * this.cameraToCenterDistance / pixelPerMeter:
-        const requiredPixelPerMeter = Math.cos(this._pitch) * this.cameraToCenterDistance / requiredAltitude;
+        const requiredPixelPerMeter = Math.cos(this._pitch) * this._cameraToCenterDistance / requiredAltitude;
         // Since pixelPerMeter = mercatorZfromAltitude(1, center.lat) * worldSize:
         const requiredWorldSize = requiredPixelPerMeter / mercatorZfromAltitude(1, center.lat);
         // Since worldSize = this.tileSize * scale:
-        const requiredScale = requiredWorldSize / this.tileSize;
+        const requiredScale = requiredWorldSize / this._tileSize;
         const zoom = this.scaleZoom(requiredScale);
 
         // update matrices
@@ -588,7 +598,7 @@ export class Transform {
      */
     public locationPoint(lnglat: LngLat, terrain?: Terrain): Point {
         return terrain ?
-            this._mercatorCoordinatePoint(this._locationCoordinate(lnglat), terrain.getElevationForLngLatZoom(lnglat, this.tileZoom), this._pixelMatrix3D) :
+            this._mercatorCoordinatePoint(this._locationCoordinate(lnglat), terrain.getElevationForLngLatZoom(lnglat, this._tileZoom), this._pixelMatrix3D) :
             this._mercatorCoordinatePoint(this._locationCoordinate(lnglat));
     }
 
@@ -717,7 +727,7 @@ export class Transform {
      * @returns Horizon above center in pixels.
      */
     public getHorizon(): number {
-        return Math.tan(Math.PI / 2 - this._pitch) * this.cameraToCenterDistance * 0.85;
+        return Math.tan(Math.PI / 2 - this._pitch) * this._cameraToCenterDistance * 0.85;
     }
 
     /**
@@ -783,7 +793,7 @@ export class Transform {
             lngRange = [-almost180, almost180];
         }
 
-        const worldSize = this.tileSize * this.zoomScale(result.zoom); // A world size for the requested zoom level, not the current world size
+        const worldSize = this._tileSize * this.zoomScale(result.zoom); // A world size for the requested zoom level, not the current world size
         let minY = 0;
         let maxY = worldSize;
         let minX = 0;
@@ -879,7 +889,7 @@ export class Transform {
         const projectedCenter = this.project(this.center);
         const x = projectedCenter.x;
         const y = projectedCenter.y;
-        this.cameraToCenterDistance = 0.5 / Math.tan(halfFov) * this._height;
+        this._cameraToCenterDistance = 0.5 / Math.tan(halfFov) * this._height;
         this._pixelPerMeter = mercatorZfromAltitude(1, this.center.lat) * this.worldSize;
 
         let m = mat4.identity(new Float64Array(16) as any);
@@ -894,7 +904,7 @@ export class Transform {
         this.glCoordMatrix = m;
 
         // Calculate the camera to sea-level distance in pixel in respect of terrain
-        const cameraToSeaLevelDistance = this.cameraToCenterDistance + this._elevation * this._pixelPerMeter / Math.cos(this._pitch);
+        const cameraToSeaLevelDistance = this._cameraToCenterDistance + this._elevation * this._pixelPerMeter / Math.cos(this._pitch);
         // In case of negative minimum elevation (e.g. the dead see, under the sea maps) use a lower plane for calculation
         const minElevation = Math.min(this.elevation, this.minElevationForCurrentTile);
         const cameraToLowestPointDistance = cameraToSeaLevelDistance - minElevation * this._pixelPerMeter / Math.cos(this._pitch);
@@ -910,7 +920,7 @@ export class Transform {
 
         // Find the distance from the center point to the horizon
         const horizon = this.getHorizon();
-        const horizonAngle = Math.atan(horizon / this.cameraToCenterDistance);
+        const horizonAngle = Math.atan(horizon / this._cameraToCenterDistance);
         const fovCenterToHorizon = 2 * horizonAngle * (0.5 + offset.y / (horizon * 2));
         const topHalfSurfaceDistanceHorizon = Math.sin(fovCenterToHorizon) * lowestPlane / Math.sin(clamp(Math.PI - groundAngle - fovCenterToHorizon, 0.01, Math.PI - 0.01));
 
@@ -937,7 +947,7 @@ export class Transform {
         m[9] = offset.y * 2 / this._height;
 
         mat4.scale(m, m, [1, -1, 1]);
-        mat4.translate(m, m, [0, 0, -this.cameraToCenterDistance]);
+        mat4.translate(m, m, [0, 0, -this._cameraToCenterDistance]);
         mat4.rotateX(m, m, this._pitch);
         mat4.rotateZ(m, m, this._angle);
         mat4.translate(m, m, [-x, -y, 0]);
@@ -990,7 +1000,7 @@ export class Transform {
         const coord = this._pointCoordinate(new Point(0, 0));
         const p = [coord.x * this.worldSize, coord.y * this.worldSize, 0, 1] as vec4;
         const topPoint = vec4.transformMat4(p, p, this._pixelMatrix);
-        return topPoint[3] / this.cameraToCenterDistance;
+        return topPoint[3] / this._cameraToCenterDistance;
     }
 
     /**
@@ -1006,7 +1016,7 @@ export class Transform {
      */
     private _getCameraPoint(): Point {
         const pitch = this._pitch;
-        const yOffset = Math.tan(pitch) * (this.cameraToCenterDistance || 1);
+        const yOffset = Math.tan(pitch) * (this._cameraToCenterDistance || 1);
         return this.centerPoint.add(new Point(0, yOffset));
     }
 
