@@ -32,12 +32,12 @@ describe('transform', () => {
         expect(transform.centerPoint.equals(new Point(250, 250))).toBe(true);
         expect(transform.scaleZoom(0)).toBe(-Infinity);
         expect(transform.scaleZoom(10)).toBe(3.3219280948873626);
-        expect(transform.point).toEqual(new Point(262144, 262144));
+        expect(transform.project(transform.center)).toEqual(new Point(262144, 262144));
         expect(transform.height).toBe(500);
         expect(fixedLngLat(transform.pointLocation(new Point(250, 250)))).toEqual({lng: 0, lat: 0});
-        expect(fixedCoord(transform.pointCoordinate(new Point(250, 250)))).toEqual({x: 0.5, y: 0.5, z: 0});
+        expect(fixedCoord(transform.pointMercatorCoordinate(new Point(250, 250)))).toEqual({x: 0.5, y: 0.5, z: 0});
         expect(transform.locationPoint(new LngLat(0, 0))).toEqual({x: 250, y: 250});
-        expect(transform.locationCoordinate(new LngLat(0, 0))).toEqual({x: 0.5, y: 0.5, z: 0});
+        expect((transform as any)._locationCoordinate(new LngLat(0, 0))).toEqual({x: 0.5, y: 0.5, z: 0});
     });
 
     test('does not throw on bad center', () => {
@@ -379,7 +379,7 @@ describe('transform', () => {
         expect(unwrappedCoords).toHaveLength(4);
 
         //getVisibleUnwrappedCoordinates should honor _renderWorldCopies
-        transform._renderWorldCopies = false;
+        transform.renderWorldCopies = false;
         unwrappedCoords = transform.getVisibleUnwrappedCoordinates(new CanonicalTileID(0, 0, 0));
         expect(unwrappedCoords).toHaveLength(1);
     });
@@ -423,8 +423,8 @@ describe('transform', () => {
         terrain.getElevationForLngLatZoom = () => 400;
         transform.recalculateZoom(terrain as any);
         expect(transform.elevation).toBe(400);
-        expect(transform._center.lng).toBeCloseTo(10, 10);
-        expect(transform._center.lat).toBeCloseTo(50, 10);
+        expect(transform.center.lng).toBeCloseTo(10, 10);
+        expect(transform.center.lat).toBeCloseTo(50, 10);
         expect(transform.getCameraPosition().altitude).toBeCloseTo(expectedAltitude, 10);
         expect(transform.zoom).toBeCloseTo(14.1845318986, 10);
 
@@ -442,7 +442,7 @@ describe('transform', () => {
         const terrain = {
             pointCoordinate: () => null
         } as any as Terrain;
-        const coordinate = transform.pointCoordinate(new Point(0, 0), terrain);
+        const coordinate = transform.pointMercatorCoordinate(new Point(0, 0), terrain);
 
         expect(coordinate).toBeDefined();
     });
