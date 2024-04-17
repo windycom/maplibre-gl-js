@@ -32,7 +32,7 @@ export class Transform {
     /**
      * This transform's bearing in radians.
      */
-    angle: number;
+    private _angle: number;
     private _rotationMatrix: mat2;
     pixelsToGLUnits: [number, number];
 
@@ -56,9 +56,8 @@ export class Transform {
     /**
      * Vertical field of view in radians.
      */
-    _fov: number;
-
-    _pitch: number;
+    private _fov: number;
+    private _pitch: number;
     private _zoom: number;
     private _unmodified: boolean;
     private _renderWorldCopies: boolean;
@@ -91,7 +90,7 @@ export class Transform {
         this._center = new LngLat(0, 0);
         this._elevation = 0;
         this.zoom = 0;
-        this.angle = 0;
+        this._angle = 0;
         this._fov = 0.6435011087932844;
         this._pitch = 0;
         this._unmodified = true;
@@ -116,7 +115,7 @@ export class Transform {
         this._elevation = that._elevation;
         this.minElevationForCurrentTile = that.minElevationForCurrentTile;
         this.zoom = that.zoom;
-        this.angle = that.angle;
+        this._angle = that._angle;
         this._fov = that._fov;
         this._pitch = that._pitch;
         this._unmodified = that._unmodified;
@@ -176,18 +175,22 @@ export class Transform {
     }
 
     get bearing(): number {
-        return -this.angle / Math.PI * 180;
+        return -this._angle / Math.PI * 180;
     }
     set bearing(bearing: number) {
         const b = -wrap(bearing, -180, 180) * Math.PI / 180;
-        if (this.angle === b) return;
+        if (this._angle === b) return;
         this._unmodified = false;
-        this.angle = b;
+        this._angle = b;
         this._calcMatrices();
 
         // 2x2 matrix for rotating points
         this._rotationMatrix = mat2.create();
-        mat2.rotate(this._rotationMatrix, this._rotationMatrix, this.angle);
+        mat2.rotate(this._rotationMatrix, this._rotationMatrix, this._angle);
+    }
+
+    get angle(): number {
+        return this._angle;
     }
 
     get pitch(): number {
@@ -199,6 +202,10 @@ export class Transform {
         this._unmodified = false;
         this._pitch = p;
         this._calcMatrices();
+    }
+
+    get pitchRadians(): number {
+        return this._pitch;
     }
 
     get fov(): number {
@@ -922,7 +929,7 @@ export class Transform {
         mat4.scale(m, m, [1, -1, 1]);
         mat4.translate(m, m, [0, 0, -this.cameraToCenterDistance]);
         mat4.rotateX(m, m, this._pitch);
-        mat4.rotateZ(m, m, this.angle);
+        mat4.rotateZ(m, m, this._angle);
         mat4.translate(m, m, [-x, -y, 0]);
 
         // The mercatorMatrix can be used to transform points from mercator coordinates
@@ -950,7 +957,7 @@ export class Transform {
         // of the transformation so that 0°, 90°, 180°, and 270° rasters are crisp, and adjust the shift so that
         // it is always <= 0.5 pixels.
         const xShift = (this.width % 2) / 2, yShift = (this.height % 2) / 2,
-            angleCos = Math.cos(this.angle), angleSin = Math.sin(this.angle),
+            angleCos = Math.cos(this._angle), angleSin = Math.sin(this._angle),
             dx = x - Math.round(x) + angleCos * xShift + angleSin * yShift,
             dy = y - Math.round(y) + angleCos * yShift + angleSin * xShift;
         const alignedM = new Float64Array(m) as any as mat4;

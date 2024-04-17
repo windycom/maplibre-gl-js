@@ -212,7 +212,7 @@ const symbolSDFUniformValues = (
     return extend(symbolIconUniformValues(functionType, size,
         rotateInShader, pitchWithMap, isAlongLine, painter, matrix, labelPlaneMatrix,
         glCoordMatrix, translation, isText, texSize), {
-        'u_gamma_scale': (pitchWithMap ? Math.cos(transform._pitch) * transform.cameraToCenterDistance : 1),
+        'u_gamma_scale': (pitchWithMap ? Math.cos(transform.pitchRadians) * transform.cameraToCenterDistance : 1),
         'u_device_pixel_ratio': painter.pixelRatio,
         'u_is_halo': +isHalo
     });

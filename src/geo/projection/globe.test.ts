@@ -184,11 +184,11 @@ function createMockTransform(object: {
             lng: (object && object.center) ? object.center.lng : 0,
         },
         worldSize: 10.5 * 512,
-        _fov: Math.PI / 4.0,
+        fov: 45.0,
         width: (object && object.width) ? object.width : 640,
         height: (object && object.height) ? object.height : 480,
         cameraToCenterDistance: 759,
-        _pitch: pitchDegrees / 180.0 * Math.PI, // in radians
+        pitchRadians: pitchDegrees / 180.0 * Math.PI, // in radians
         pitch: pitchDegrees, // in degrees
         angle: (object && object.bearing) ? (-object.bearing / 180.0 * Math.PI) : 0,
         zoom: 0,

@@ -72,7 +72,7 @@ export class CollisionIndex {
 
         this.grid = grid;
         this.ignoredGrid = ignoredGrid;
-        this.pitchFactor = Math.cos(transform._pitch) * transform.cameraToCenterDistance;
+        this.pitchFactor = Math.cos(transform.pitchRadians) * transform.cameraToCenterDistance;
 
         this.screenRightBoundary = transform.width + viewportPadding;
         this.screenBottomBoundary = transform.height + viewportPadding;
