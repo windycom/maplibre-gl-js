@@ -4,8 +4,7 @@ import {Transform} from '../geo/transform';
 import {smartWrap} from './smart_wrap';
 
 const transform = new Transform();
-transform.width = 100;
-transform.height = 100;
+transform.resize(100, 100);
 transform.getHorizon = () => 0; // map center
 
 describe('smartWrap', () => {

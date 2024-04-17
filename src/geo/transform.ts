@@ -26,8 +26,8 @@ export class Transform {
     lngRange: [number, number];
     latRange: [number, number];
     scale: number;
-    width: number;
-    height: number;
+    private _width: number;
+    private _height: number;
 
     /**
      * This transform's bearing in radians.
@@ -85,8 +85,8 @@ export class Transform {
 
         this.setMaxBounds();
 
-        this.width = 0;
-        this.height = 0;
+        this._width = 0;
+        this._height = 0;
         this._center = new LngLat(0, 0);
         this._elevation = 0;
         this.zoom = 0;
@@ -109,8 +109,8 @@ export class Transform {
     public apply(that: Transform) {
         this.tileSize = that.tileSize;
         this.latRange = that.latRange;
-        this.width = that.width;
-        this.height = that.height;
+        this._width = that._width;
+        this._height = that._height;
         this._center = that._center;
         this._elevation = that._elevation;
         this.minElevationForCurrentTile = that.minElevationForCurrentTile;
@@ -122,6 +122,16 @@ export class Transform {
         this._edgeInsets = that._edgeInsets.clone();
         this._calcMatrices();
     }
+
+    /**
+     * Width in pixels. Set using {@link resize}.
+     */
+    get width(): number { return this._width; }
+
+    /**
+     * Height in pixels. Set using {@link resize}.
+     */
+    get height(): number { return this._height; }
 
     get minZoom(): number { return this._minZoom; }
     set minZoom(zoom: number) {
@@ -171,7 +181,7 @@ export class Transform {
     }
 
     get size(): Point {
-        return new Point(this.width, this.height);
+        return new Point(this._width, this._height);
     }
 
     get bearing(): number {
@@ -265,7 +275,7 @@ export class Transform {
      * and +y axis pointing downwards. This accounts for padding.
      */
     get centerPoint(): Point {
-        return this._edgeInsets.getCenter(this.width, this.height);
+        return this._edgeInsets.getCenter(this._width, this._height);
     }
 
     get unmodified(): boolean { return this._unmodified; }
@@ -326,9 +336,9 @@ export class Transform {
         const result = [new UnwrappedTileID(0, tileID)];
         if (this._renderWorldCopies) {
             const utl = this._pointCoordinate(new Point(0, 0));
-            const utr = this._pointCoordinate(new Point(this.width, 0));
-            const ubl = this._pointCoordinate(new Point(this.width, this.height));
-            const ubr = this._pointCoordinate(new Point(0, this.height));
+            const utr = this._pointCoordinate(new Point(this._width, 0));
+            const ubl = this._pointCoordinate(new Point(this._width, this._height));
+            const ubr = this._pointCoordinate(new Point(0, this._height));
             const w0 = Math.floor(Math.min(utl.x, utr.x, ubl.x, ubr.x));
             const w1 = Math.floor(Math.max(utl.x, utr.x, ubl.x, ubr.x));
 
@@ -474,8 +484,8 @@ export class Transform {
     }
 
     public resize(width: number, height: number) {
-        this.width = width;
-        this.height = height;
+        this._width = width;
+        this._height = height;
 
         this.pixelsToGLUnits = [2 / width, -2 / height];
         this._constrain();
@@ -681,12 +691,12 @@ export class Transform {
      * @returns Returns a {@link LngLatBounds} object describing the map's geographical bounds.
      */
     public getBounds(): LngLatBounds {
-        const top = Math.max(0, this.height / 2 - this.getHorizon());
+        const top = Math.max(0, this._height / 2 - this.getHorizon());
         return new LngLatBounds()
             .extend(this.pointLocation(new Point(0, top)))
-            .extend(this.pointLocation(new Point(this.width, top)))
-            .extend(this.pointLocation(new Point(this.width, this.height)))
-            .extend(this.pointLocation(new Point(0, this.height)));
+            .extend(this.pointLocation(new Point(this._width, top)))
+            .extend(this.pointLocation(new Point(this._width, this._height)))
+            .extend(this.pointLocation(new Point(0, this._height)));
     }
 
     /**
@@ -851,7 +861,7 @@ export class Transform {
     }
 
     private _constrain(): void {
-        if (!this.center || !this.width || !this.height || this._constraining) return;
+        if (!this.center || !this._width || !this._height || this._constraining) return;
         this._constraining = true;
         const unmodified = this._unmodified;
         const {center, zoom} = this.getConstrained(this.center, this.zoom);
@@ -862,25 +872,25 @@ export class Transform {
     }
 
     private _calcMatrices(): void {
-        if (!this.height) return;
+        if (!this._height) return;
 
         const halfFov = this._fov / 2;
         const offset = this.centerOffset;
         const projectedCenter = this.project(this.center);
         const x = projectedCenter.x;
         const y = projectedCenter.y;
-        this.cameraToCenterDistance = 0.5 / Math.tan(halfFov) * this.height;
+        this.cameraToCenterDistance = 0.5 / Math.tan(halfFov) * this._height;
         this._pixelPerMeter = mercatorZfromAltitude(1, this.center.lat) * this.worldSize;
 
         let m = mat4.identity(new Float64Array(16) as any);
-        mat4.scale(m, m, [this.width / 2, -this.height / 2, 1]);
+        mat4.scale(m, m, [this._width / 2, -this._height / 2, 1]);
         mat4.translate(m, m, [1, -1, 0]);
         this.labelPlaneMatrix = m;
 
         m = mat4.identity(new Float64Array(16) as any);
         mat4.scale(m, m, [1, -1, 1]);
         mat4.translate(m, m, [-1, -1, 0]);
-        mat4.scale(m, m, [2 / this.width, 2 / this.height, 1]);
+        mat4.scale(m, m, [2 / this._width, 2 / this._height, 1]);
         this.glCoordMatrix = m;
 
         // Calculate the camera to sea-level distance in pixel in respect of terrain
@@ -895,7 +905,7 @@ export class Transform {
         // 1 Z unit is equivalent to 1 horizontal px at the center of the map
         // (the distance between[width/2, height/2] and [width/2 + 1, height/2])
         const groundAngle = Math.PI / 2 + this._pitch;
-        const fovAboveCenter = this._fov * (0.5 + offset.y / this.height);
+        const fovAboveCenter = this._fov * (0.5 + offset.y / this._height);
         const topHalfSurfaceDistance = Math.sin(fovAboveCenter) * lowestPlane / Math.sin(clamp(Math.PI - groundAngle - fovAboveCenter, 0.01, Math.PI - 0.01));
 
         // Find the distance from the center point to the horizon
@@ -916,15 +926,15 @@ export class Transform {
         // Other values work for mapbox-gl-js but deckgl was encountering precision issues
         // when rendering custom layers. This value was experimentally chosen and
         // seems to solve z-fighting issues in deckgl while not clipping buildings too close to the camera.
-        const nearZ = this.height / 50;
+        const nearZ = this._height / 50;
 
         // matrix for conversion from location to clip space(-1 .. 1)
         m = new Float64Array(16) as any;
-        mat4.perspective(m, this._fov, this.width / this.height, nearZ, farZ);
+        mat4.perspective(m, this._fov, this._width / this._height, nearZ, farZ);
 
         // Apply center of perspective offset
-        m[8] = -offset.x * 2 / this.width;
-        m[9] = offset.y * 2 / this.height;
+        m[8] = -offset.x * 2 / this._width;
+        m[9] = offset.y * 2 / this._height;
 
         mat4.scale(m, m, [1, -1, 1]);
         mat4.translate(m, m, [0, 0, -this.cameraToCenterDistance]);
@@ -956,7 +966,7 @@ export class Transform {
         // is an odd integer to preserve rendering to the pixel grid. We're rotating this shift based on the angle
         // of the transformation so that 0°, 90°, 180°, and 270° rasters are crisp, and adjust the shift so that
         // it is always <= 0.5 pixels.
-        const xShift = (this.width % 2) / 2, yShift = (this.height % 2) / 2,
+        const xShift = (this._width % 2) / 2, yShift = (this._height % 2) / 2,
             angleCos = Math.cos(this._angle), angleSin = Math.sin(this._angle),
             dx = x - Math.round(x) + angleCos * xShift + angleSin * yShift,
             dy = y - Math.round(y) + angleCos * yShift + angleSin * xShift;

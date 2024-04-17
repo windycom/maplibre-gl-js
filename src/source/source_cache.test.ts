@@ -139,8 +139,7 @@ describe('SourceCache#addTile', () => {
         sourceCache.on('dataloading', () => { add++; });
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
         sourceCache._addTile(tileID);
         sourceCache._removeTile(tileID.key);
@@ -160,8 +159,7 @@ describe('SourceCache#addTile', () => {
         };
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         const tile = sourceCache._addTile(tileID);
@@ -190,8 +188,7 @@ describe('SourceCache#addTile', () => {
         };
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         const id = tileID.key;
@@ -282,8 +279,7 @@ describe('SourceCache#removeTile', () => {
         sourceCache._source.unloadTile = jest.fn();
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         sourceCache._addTile(tileID);
@@ -1654,8 +1650,7 @@ describe('SourceCache#findLoadedParent', () => {
         const sourceCache = createSourceCache({});
         sourceCache.onAdd(undefined);
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         const tile = {
@@ -1673,8 +1668,7 @@ describe('SourceCache#findLoadedParent', () => {
         const sourceCache = createSourceCache({});
         sourceCache.onAdd(undefined);
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         const tile = new Tile(new OverscaledTileID(1, 0, 1, 0, 0), 512);
@@ -1690,8 +1684,7 @@ describe('SourceCache#findLoadedParent', () => {
         const sourceCache = createSourceCache({});
         sourceCache.onAdd(undefined);
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         const mockTile = id => {
@@ -1789,8 +1782,7 @@ describe('SourceCache sets max cache size correctly', () => {
         });
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         // Expect max size to be ((512 / tileSize + 1) ^ 2) * 5 => 3 * 3 * 5
@@ -1803,8 +1795,7 @@ describe('SourceCache sets max cache size correctly', () => {
         });
 
         const tr = new Transform();
-        tr.width = 512;
-        tr.height = 512;
+        tr.resize(512, 512);
         sourceCache.updateCacheSize(tr);
 
         // Expect max size to be ((512 / tileSize + 1) ^ 2) * 5 => 2 * 2 * 5
