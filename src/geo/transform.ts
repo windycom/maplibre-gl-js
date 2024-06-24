@@ -665,7 +665,7 @@ export class Transform {
     setMaxBounds(bounds?: LngLatBounds | null) {
         if (bounds) {
             this.lngRange = [bounds.getWest(), bounds.getEast()];
-            this.latRange = [bounds.getSouth(), bounds.getNorth()];
+            this.latRange = [Math.max(bounds.getSouth(), -this.maxValidLatitude), Math.min(bounds.getNorth(), this.maxValidLatitude)];
             this._constrain();
         } else {
             this.lngRange = null;
@@ -721,7 +721,9 @@ export class Transform {
             sy = maxY - minY < size.y ? size.y / (maxY - minY) : 0;
         }
 
-        if (this.lngRange) {
+        const lngUnlimited = !this.lngRange || Math.abs(this.lngRange[0] - this.lngRange[1]) > 360;
+
+        if (this.lngRange && !lngUnlimited) {
             const lngRange = this.lngRange;
 
             minX = wrap(
@@ -763,7 +765,7 @@ export class Transform {
             if (y + h2 > maxY) y2 = maxY - h2;
         }
 
-        if (this.lngRange) {
+        if (this.lngRange && !lngUnlimited) {
             const centerX = (minX + maxX) / 2;
             const x = wrap(point.x, centerX - this.worldSize / 2, centerX + this.worldSize / 2);
             const w2 = size.x / 2;

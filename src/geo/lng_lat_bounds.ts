@@ -23,6 +23,8 @@ export type LngLatBoundsLike = LngLatBounds | [LngLatLike, LngLatLike] | [number
  * A `LngLatBounds` object represents a geographical bounding box,
  * defined by its southwest and northeast points in longitude and latitude.
  *
+ * If the longitude bounds difference is over 360°, no longitude bound is applied.
+ *
  * If no arguments are provided to the constructor, a `null` bounding box is created.
  *
  * Note that any Mapbox GL method that accepts a `LngLatBounds` object as an argument or option
