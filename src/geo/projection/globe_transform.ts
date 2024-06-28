@@ -425,12 +425,16 @@ export class GlobeTransform extends Transform {
         return sphere;
     }
 
-    public isOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
+    public isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
         if (!this._globeRendering) {
-            return this._mercatorTransform.isOccluded(x, y, unwrappedTileID);
+            return this._mercatorTransform.isTilePositionOccluded(x, y, unwrappedTileID);
         }
         const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID);
         return !this.isSurfacePointVisible(spherePos);
+    }
+
+    public isLocationOccluded(location: LngLat): boolean {
+        return !this.isSurfacePointVisible(angularCoordinatesToSurfaceVector(location));
     }
 
     public transformLightDirection(dir: vec3): vec3 {

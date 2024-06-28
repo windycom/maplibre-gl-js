@@ -620,7 +620,9 @@ export abstract class Transform {
      * @param y - Tile space coordinate in range 0..EXTENT.
      * @param unwrappedTileID - TileID of the tile the supplied coordinates belong to.
      */
-    abstract isOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean;
+    abstract isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean;
+
+    abstract isLocationOccluded(location: LngLat): boolean;
 
     /**
      * @internal

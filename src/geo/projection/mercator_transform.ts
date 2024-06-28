@@ -698,7 +698,11 @@ export class MercatorTransform extends Transform {
         return getBasicProjectionData(overscaledTileID, matrix, ignoreTerrainMatrix);
     }
 
-    override isOccluded(_: number, __: number, ___: UnwrappedTileID): boolean {
+    override isTilePositionOccluded(_: number, __: number, ___: UnwrappedTileID): boolean {
+        return false;
+    }
+
+    override isLocationOccluded(_: LngLat): boolean {
         return false;
     }
 
