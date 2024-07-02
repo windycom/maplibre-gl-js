@@ -295,7 +295,7 @@ export class MercatorTransform extends Transform implements ITransform {
             loc.y - (a.y - b.y));
         let center = this.coordinateLocation(newCenter);
         if (this._renderWorldCopies) {
-            center = this.center.wrap();
+            center = center.wrap();
         }
         this.setCenter(center);
     }
