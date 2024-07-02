@@ -7,7 +7,6 @@ import {GridIndex} from './grid_index';
 import {mat4} from 'gl-matrix';
 import ONE_EM from '../symbol/one_em';
 
-import type {Transform} from '../geo/transform';
 import type {SingleCollisionBox} from '../data/bucket/symbol_bucket';
 import type {
     GlyphOffsetArray,
@@ -17,6 +16,7 @@ import type {OverlapMode} from '../style/style_layer/overlap_mode';
 import {UnwrappedTileID} from '../source/tile_id';
 import {type PointProjection, SymbolProjectionContext, pathSlicedToLongestUnoccluded, placeFirstAndLastGlyph, projectPathSpecialProjection} from '../symbol/projection';
 import {clamp, getAABB} from '../util/util';
+import type {ITransform} from '../geo/transform_interface';
 
 // When a symbol crosses the edge that causes it to be included in
 // collision detection, it will cause changes in the symbols around
@@ -59,7 +59,7 @@ export type FeatureKey = {
 export class CollisionIndex {
     grid: GridIndex<FeatureKey>;
     ignoredGrid: GridIndex<FeatureKey>;
-    transform: Transform;
+    transform: ITransform;
     pitchFactor: number;
     screenRightBoundary: number;
     screenBottomBoundary: number;
@@ -71,7 +71,7 @@ export class CollisionIndex {
     perspectiveRatioCutoff: number;
 
     constructor(
-        transform: Transform,
+        transform: ITransform,
         grid = new GridIndex<FeatureKey>(transform.width + 2 * viewportPadding, transform.height + 2 * viewportPadding, 25),
         ignoredGrid = new GridIndex<FeatureKey>(transform.width + 2 * viewportPadding, transform.height + 2 * viewportPadding, 25)
     ) {

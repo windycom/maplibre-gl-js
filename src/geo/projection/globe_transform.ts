@@ -14,7 +14,7 @@ import {ProjectionData} from '../../render/program/projection_program';
 import {MercatorCoordinate} from '../mercator_coordinate';
 import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
-import {ITransform} from '../transform_interface';
+import type {ITransform} from '../transform_interface';
 
 export function getGlobeCircumferencePixels(transform: {worldSize: number; center: {lat: number}}): number {
     const radius = getGlobeRadiusPixels(transform.worldSize, transform.center.lat);
@@ -195,17 +195,19 @@ export class GlobeTransform extends Transform implements ITransform {
         this._initialized = true;
     }
 
-    override clone(): Transform {
+    override clone(): ITransform {
         const clone = new GlobeTransform(null, this._globeProjectionEnabled);
         clone.apply(this);
         this.newFrameUpdate();
         return clone;
     }
 
-    public override apply(that: Transform): void {
+    public override apply(that: ITransform): void {
         super.apply(that);
         this._mercatorTransform.apply(this);
     }
+
+    public override get pixelsPerMeter():number { return this._mercatorTransform.pixelsPerMeter; }
 
     public override get modelViewProjectionMatrix(): mat4 { return this._globeRendering ? this._globeViewProjMatrixNoCorrection : this._mercatorTransform.modelViewProjectionMatrix; }
 

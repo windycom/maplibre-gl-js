@@ -9,7 +9,7 @@ import {Terrain} from '../render/terrain';
 import {MercatorCoordinate} from '../geo/mercator_coordinate';
 import {projectToWorldCoordinates, unprojectFromWorldCoordinates} from '../geo/projection/mercator_transform';
 
-import type {Transform} from '../geo/transform';
+import type {ITransform} from '../geo/transform_interface';
 import type {LngLatLike} from '../geo/lng_lat';
 import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
 import type {TaskID} from '../util/task_queue';
@@ -242,7 +242,7 @@ export type CameraUpdateTransformFunction =  (next: {
 };
 
 export abstract class Camera extends Evented {
-    transform: Transform;
+    transform: ITransform;
     terrain: Terrain;
     handlers: HandlerManager;
 
@@ -291,7 +291,7 @@ export abstract class Camera extends Evented {
      * @internal
      * Used to track accumulated changes during continuous interaction
      */
-    _requestedCameraState?: Transform;
+    _requestedCameraState?: ITransform;
     /**
      * A callback used to defer camera updates or apply arbitrary constraints.
      * If specified, this Camera instance can be used as a stateless component in React etc.
@@ -301,7 +301,7 @@ export abstract class Camera extends Evented {
     abstract _requestRenderFrame(a: () => void): TaskID;
     abstract _cancelRenderFrame(_: TaskID): void;
 
-    constructor(transform: Transform, options: {
+    constructor(transform: ITransform, options: {
         bearingSnap: number;
     }) {
         super();
@@ -321,7 +321,7 @@ export abstract class Camera extends Evented {
      * to this new transform, carrying over all the properties of the old transform (center, pitch, etc.).
      * When the style's projection is changed (or first set), this function should be called.
      */
-    migrateProjection(newTransform: Transform) {
+    migrateProjection(newTransform: ITransform) {
         newTransform.apply(this.transform);
         this.transform = newTransform;
     }
@@ -856,27 +856,27 @@ export abstract class Camera extends Evented {
             bearingChanged = false,
             pitchChanged = false;
 
-        if ('zoom' in options && tr.zoom !== +options.zoom) {
-            zoomChanged = true;
-            tr.zoom = +options.zoom;
+        if (options.center !== undefined) {
+            tr.setCenter(LngLat.convert(options.center));
         }
 
-        if (options.center !== undefined) {
-            tr.center = LngLat.convert(options.center);
+        if ('zoom' in options && tr.zoom !== +options.zoom) {
+            zoomChanged = true;
+            tr.setZoom(+options.zoom);
         }
 
         if ('bearing' in options && tr.bearing !== +options.bearing) {
             bearingChanged = true;
-            tr.bearing = +options.bearing;
+            tr.setBearing(+options.bearing);
         }
 
         if ('pitch' in options && tr.pitch !== +options.pitch) {
             pitchChanged = true;
-            tr.pitch = +options.pitch;
+            tr.setPitch(+options.pitch);
         }
 
         if (options.padding != null && !tr.isPaddingEqual(options.padding)) {
-            tr.padding = options.padding;
+            tr.setPadding(options.padding);
         }
         this._applyUpdatedTransform(tr);
 
@@ -1018,13 +1018,13 @@ export abstract class Camera extends Evented {
 
         this._ease((k) => {
             if (this._zooming) {
-                tr.zoom = interpolates.number(startZoom, zoom, k);
+                tr.setZoom(interpolates.number(startZoom, zoom, k));
             }
             if (this._rotating) {
-                tr.bearing = interpolates.number(startBearing, bearing, k);
+                tr.setBearing(interpolates.number(startBearing, bearing, k));
             }
             if (this._pitching) {
-                tr.pitch = interpolates.number(startPitch, pitch, k);
+                tr.setPitch(interpolates.number(startPitch, pitch, k));
             }
             if (this._padding) {
                 tr.interpolatePadding(startPadding, padding as PaddingOptions, k);
@@ -1083,7 +1083,7 @@ export abstract class Camera extends Evented {
     }
 
     _updateElevation(k: number) {
-        this.transform.minElevationForCurrentTile = this.terrain.getMinTileElevationForLngLatZoom(this._elevationCenter, this.transform.tileZoom);
+        this.transform.setMinElevationForCurrentTile(this.terrain.getMinTileElevationForLngLatZoom(this._elevationCenter, this.transform.tileZoom));
         const elevation = this.terrain.getElevationForLngLatZoom(this._elevationCenter, this.transform.tileZoom);
         // target terrain updated during flight, slowly move camera to new height
         if (k < 1 && elevation !== this._elevationTarget) {
@@ -1092,7 +1092,7 @@ export abstract class Camera extends Evented {
             this._elevationStart += k * (pitch1 - pitch2);
             this._elevationTarget = elevation;
         }
-        this.transform.elevation = interpolates.number(this._elevationStart, this._elevationTarget, k);
+        this.transform.setElevation(interpolates.number(this._elevationStart, this._elevationTarget, k));
     }
 
     _finalizeElevation() {
@@ -1108,7 +1108,7 @@ export abstract class Camera extends Evented {
      * It may differ from the state used for rendering (`this.transform`).
      * @returns Transform to apply changes to
      */
-    _getTransformForUpdate(): Transform {
+    _getTransformForUpdate(): ITransform {
         if (!this.transformCameraUpdate) return this.transform;
 
         if (!this._requestedCameraState) {
@@ -1123,7 +1123,7 @@ export abstract class Camera extends Evented {
      * @param tr - the requested camera end state
      * Call `transformCameraUpdate` if present, and then apply the "approved" changes.
      */
-    _applyUpdatedTransform(tr: Transform) {
+    _applyUpdatedTransform(tr: ITransform) {
         if (!this.transformCameraUpdate) return;
 
         const nextTransform = tr.clone();
@@ -1134,11 +1134,11 @@ export abstract class Camera extends Evented {
             bearing,
             elevation
         } = this.transformCameraUpdate(nextTransform);
-        if (center) nextTransform.center = center;
-        if (zoom !== undefined) nextTransform.zoom = zoom;
-        if (pitch !== undefined) nextTransform.pitch = pitch;
-        if (bearing !== undefined) nextTransform.bearing = bearing;
-        if (elevation !== undefined) nextTransform.elevation = elevation;
+        if (center) nextTransform.setCenter(center);
+        if (zoom !== undefined) nextTransform.setZoom(zoom);
+        if (pitch !== undefined) nextTransform.setPitch(pitch);
+        if (bearing !== undefined) nextTransform.setBearing(bearing);
+        if (elevation !== undefined) nextTransform.setElevation(elevation);
         this.transform.apply(nextTransform);
     }
 
@@ -1355,13 +1355,13 @@ export abstract class Camera extends Evented {
             // s: The distance traveled along the flight path, measured in ρ-screenfuls.
             const s = k * S;
             const scale = 1 / w(s);
-            tr.zoom = k === 1 ? zoom : startZoom + tr.scaleZoom(scale);
+            tr.setZoom(k === 1 ? zoom : startZoom + tr.scaleZoom(scale));
 
             if (this._rotating) {
-                tr.bearing = interpolates.number(startBearing, bearing, k);
+                tr.setBearing(interpolates.number(startBearing, bearing, k));
             }
             if (this._pitching) {
-                tr.pitch = interpolates.number(startPitch, pitch, k);
+                tr.setPitch(interpolates.number(startPitch, pitch, k));
             }
             if (this._padding) {
                 tr.interpolatePadding(startPadding, padding as PaddingOptions, k);

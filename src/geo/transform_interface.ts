@@ -59,6 +59,7 @@ export interface ITransform {
     get tileSize(): number;
     get tileZoom(): number;
     get scale(): number;
+    get pixelsPerMeter(): number;
 
     /**
      * Gets the transform's width in pixels. Use {@link resize} to set the transform's size.

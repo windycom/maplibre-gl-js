@@ -10,7 +10,7 @@ import type {PaddingOptions} from './edge_insets';
 import {Terrain} from '../render/terrain';
 import {ProjectionData} from '../render/program/projection_program';
 import {PointProjection} from '../symbol/projection';
-import {ITransform} from './transform_interface';
+import type {ITransform} from './transform_interface';
 
 export const MAX_VALID_LATITUDE = 85.051129;
 
@@ -64,7 +64,7 @@ export abstract class Transform implements ITransform {
     protected _elevation: number;
     protected _edgeInsets: EdgeInsets;
 
-    protected _scale: number;
+    protected _scale: number = 1;
     private _rotationMatrix: mat2;
     private _pixelsToGLUnits: [number, number];
 
@@ -155,6 +155,8 @@ export abstract class Transform implements ITransform {
      * Center is considered to be in the middle of the viewport.
      */
     abstract get cameraToCenterDistance(): number;
+
+    abstract get pixelsPerMeter(): number;
 
     abstract get modelViewProjectionMatrix(): mat4;
 
