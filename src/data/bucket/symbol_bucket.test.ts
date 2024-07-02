@@ -27,9 +27,8 @@ const feature = vt.layers.place_label.feature(10);
 /*eslint new-cap: 0*/
 const collisionBoxArray = new CollisionBoxArray();
 const transform = new MercatorTransform();
-transform['_width'] = 100;
-transform['_height'] = 100;
-transform['_cameraToCenterDistance'] = 100;
+transform.resize(100, 100);
+transform.setFov(53.13010235415597); // Ensures that cameraToCenterDistance is 100
 
 const stacks = {'Test': glyphs} as any as {
     [_: string]: {

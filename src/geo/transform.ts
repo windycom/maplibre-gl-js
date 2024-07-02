@@ -84,7 +84,7 @@ export abstract class Transform implements ITransform {
         this._height = 0;
         this._center = new LngLat(0, 0);
         this._elevation = 0;
-        this._zoom = 0;
+        this.setZoom(0);
         this._angle = 0;
         this._fov = 0.6435011087932844;
         this._pitch = 0;
