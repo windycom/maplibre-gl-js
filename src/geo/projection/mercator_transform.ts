@@ -48,7 +48,7 @@ export function getMercatorHorizon(transform: {pitch: number; cameraToCenterDist
     return Math.tan(Math.PI / 2 - transform.pitch * Math.PI / 180.0) * transform.cameraToCenterDistance * 0.85;
 }
 
-export class MercatorTransform implements ITransform {
+export class MercatorTransform extends Transform implements ITransform {
     private _cameraToCenterDistance: number;
     private _cameraPosition: vec3;
     private _pixelPerMeter: number = 0;
@@ -275,9 +275,9 @@ export class MercatorTransform implements ITransform {
         const zoom = this.scaleZoom(requiredScale);
 
         // update matrices
-        this._elevation = elevation;
-        this._center = center;
-        this.zoom = zoom;
+        this.setElevation(elevation);
+        this.setCenter(center);
+        this.setZoom(zoom);
     }
 
     /**
@@ -292,10 +292,11 @@ export class MercatorTransform implements ITransform {
         const newCenter = new MercatorCoordinate(
             loc.x - (a.x - b.x),
             loc.y - (a.y - b.y));
-        this.center = this.coordinateLocation(newCenter);
+        let center = this.coordinateLocation(newCenter);
         if (this._renderWorldCopies) {
-            this.center = this.center.wrap();
+            center = this.center.wrap();
         }
+        this.setCenter(center);
     }
 
     /**
