@@ -99,21 +99,24 @@ export abstract class Transform implements ITransform {
     abstract clone(): ITransform;
 
     public apply(that: ITransform, constrain: boolean = false): void {
-        this.setMaxBounds(that.getMaxBounds());
-        this.resize(that.width, that.height);
-        this.setCenter(that.center);
-        this.setElevation(that.elevation);
-        this.setMinElevationForCurrentTile(that.minElevationForCurrentTile);
-        this.setZoom(that.zoom);
-        this.setBearing(that.bearing);
-        this.setPitch(that.pitch);
-        this.setFov(that.fov);
-        this.setUnmodified(that.unmodified);
+        this._tileSize = that.tileSize;
+        this._latRange = that.latRange;
+        this._lngRange = that.lngRange;
+        this._width = that.width;
+        this._height = that.height;
+        this._center = that.center;
+        this._elevation = that.elevation;
+        this._minElevationForCurrentTile = that.minElevationForCurrentTile;
+        this._angle = that.angle;
+        this._fov = that.fov;
+        this._pitch = that.pitch;
+        this._unmodified = that.unmodified;
+        this._minZoom = that.minZoom;
+        this._maxZoom = that.maxZoom;
+        this._minPitch = that.minPitch;
+        this._maxPitch = that.maxPitch;
         this.setPadding(that.padding);
-        this.setMinZoom(that.minZoom);
-        this.setMaxZoom(that.maxZoom);
-        this.setMinPitch(that.minPitch);
-        this.setMaxPitch(that.maxPitch);
+        this.setZoom(that.zoom);
         if (constrain) {
             this._constrain();
         }
