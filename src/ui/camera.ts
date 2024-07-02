@@ -857,12 +857,17 @@ export abstract class Camera extends Evented {
             pitchChanged = false;
 
         if (options.center !== undefined) {
-            tr.setCenter(LngLat.convert(options.center));
-        }
-
-        if ('zoom' in options && tr.zoom !== +options.zoom) {
-            zoomChanged = true;
-            tr.setZoom(+options.zoom);
+            if ('zoom' in options && tr.zoom !== +options.zoom) {
+                zoomChanged = true;
+                tr.setCenterZoom(LngLat.convert(options.center), +options.zoom);
+            } else {
+                tr.setCenter(LngLat.convert(options.center));
+            }
+        } else {
+            if ('zoom' in options && tr.zoom !== +options.zoom) {
+                zoomChanged = true;
+                tr.setZoom(+options.zoom);
+            }
         }
 
         if ('bearing' in options && tr.bearing !== +options.bearing) {

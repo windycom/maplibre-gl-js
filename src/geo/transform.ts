@@ -313,6 +313,18 @@ export abstract class Transform implements ITransform {
         this._calcMatrices();
     }
 
+    setCenterZoom(center: LngLat, zoom: number): void {
+        const constrained = this.getConstrained(center, zoom);
+        if (constrained.center.lat === this._center.lat && constrained.center.lng === this._center.lng && constrained.zoom === this._zoom) return;
+        this._unmodified = false;
+        this._center = constrained.center;
+        this._zoom = constrained.zoom;
+        this._tileZoom = Math.max(0, Math.floor(constrained.zoom));
+        this._scale = this.zoomScale(constrained.zoom);
+        this._constrain();
+        this._calcMatrices();
+    }
+
     /**
      * Elevation at current center point, meters above sea level
      */

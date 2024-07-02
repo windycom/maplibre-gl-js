@@ -122,6 +122,8 @@ export interface ITransform {
     get center(): LngLat;
     setCenter(center: LngLat): void;
 
+    setCenterZoom(center: LngLat, zoom: number): void;
+
     /**
      * Elevation at current center point, meters above sea level
      */
