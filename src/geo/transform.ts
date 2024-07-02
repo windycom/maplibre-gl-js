@@ -10,6 +10,7 @@ import type {PaddingOptions} from './edge_insets';
 import {Terrain} from '../render/terrain';
 import {ProjectionData} from '../render/program/projection_program';
 import {PointProjection} from '../symbol/projection';
+import {ITransform} from './transform_interface';
 
 export const MAX_VALID_LATITUDE = 85.051129;
 
@@ -26,21 +27,13 @@ export type TransformUpdateResult = {forcePlacementUpdate: boolean};
  * This data should be transferable to a transform implementation for any different projection,
  * hence the implementation of `Transform.apply`, which works on any Transform and accepts any Transform.
  */
-export abstract class Transform {
+export abstract class Transform implements ITransform {
     private _tileSize: number; // constant
     protected _tileZoom: number; // integer zoom level for tiles
     protected _lngRange: [number, number];
     protected _latRange: [number, number];
-    protected _scale: number;
     protected _width: number;
     protected _height: number;
-
-    /**
-     * This transform's bearing in radians.
-     */
-    protected _angle: number;
-    private _rotationMatrix: mat2;
-    private _pixelsToGLUnits: [number, number];
 
     private _minElevationForCurrentTile: number;
     private _constraining: boolean;
@@ -52,7 +45,10 @@ export abstract class Transform {
      * Vertical field of view in radians.
      */
     protected _fov: number;
-
+    /**
+     * This transform's bearing in radians.
+     */
+    protected _angle: number;
     /**
      * Pitch in radians.
      */
@@ -66,8 +62,11 @@ export abstract class Transform {
     protected _maxPitch: number;
     protected _center: LngLat;
     protected _elevation: number;
-    protected _pixelPerMeter: number;
     protected _edgeInsets: EdgeInsets;
+
+    protected _scale: number;
+    private _rotationMatrix: mat2;
+    private _pixelsToGLUnits: [number, number];
 
     constructor(minZoom?: number, maxZoom?: number, minPitch?: number, maxPitch?: number, renderWorldCopies?: boolean) {
         this._tileSize = 512; // constant
@@ -85,40 +84,62 @@ export abstract class Transform {
         this._height = 0;
         this._center = new LngLat(0, 0);
         this._elevation = 0;
-        this.zoom = 0;
+        this._zoom = 0;
         this._angle = 0;
         this._fov = 0.6435011087932844;
         this._pitch = 0;
         this._unmodified = true;
         this._edgeInsets = new EdgeInsets();
         this._minElevationForCurrentTile = 0;
+
+        this._constrain();
+        this._calcMatrices();
     }
 
-    abstract clone(): Transform;
+    abstract clone(): ITransform;
 
-    public apply(that: Transform, constrain: boolean = false): void {
-        this._tileSize = that._tileSize;
-        this._latRange = that._latRange;
-        this._lngRange = that._lngRange;
-        this._width = that._width;
-        this._height = that._height;
-        this._center = that._center;
-        this._elevation = that._elevation;
-        this._minElevationForCurrentTile = that._minElevationForCurrentTile;
-        this.zoom = that.zoom;
-        this._angle = that._angle;
-        this._fov = that._fov;
-        this._pitch = that._pitch;
-        this._unmodified = that._unmodified;
-        this._edgeInsets = that._edgeInsets.clone();
-        this._minZoom = that._minZoom;
-        this._maxZoom = that._maxZoom;
-        this._minPitch = that._minPitch;
-        this._maxPitch = that._maxPitch;
+    public apply(that: ITransform, constrain: boolean = false): void {
+        this.setMaxBounds(that.getMaxBounds());
+        this.resize(that.width, that.height);
+        this.setCenter(that.center);
+        this.setElevation(that.elevation);
+        this.setMinElevationForCurrentTile(that.minElevationForCurrentTile);
+        this.setZoom(that.zoom);
+        this.setBearing(that.bearing);
+        this.setPitch(that.pitch);
+        this.setFov(that.fov);
+        this.setUnmodified(that.unmodified);
+        this.setPadding(that.padding);
+        this.setMinZoom(that.minZoom);
+        this.setMaxZoom(that.maxZoom);
+        this.setMinPitch(that.minPitch);
+        this.setMaxPitch(that.maxPitch);
         if (constrain) {
             this._constrain();
         }
         this._calcMatrices();
+
+        // this._tileSize = that._tileSize;
+        // this.setMaxBounds(that.getMaxBounds());
+        // this._width = that._width;
+        // this._height = that._height;
+        // this._center = that._center;
+        // this._elevation = that._elevation;
+        // this._minElevationForCurrentTile = that._minElevationForCurrentTile;
+        // this.zoom = that.zoom;
+        // this._angle = that._angle;
+        // this._fov = that._fov;
+        // this._pitch = that._pitch;
+        // this._unmodified = that._unmodified;
+        // this._edgeInsets = that._edgeInsets.clone();
+        // this._minZoom = that._minZoom;
+        // this._maxZoom = that._maxZoom;
+        // this._minPitch = that._minPitch;
+        // this._maxPitch = that._maxPitch;
+        // if (constrain) {
+        //     this._constrain();
+        // }
+        // this._calcMatrices();
     }
 
     /**
@@ -146,7 +167,7 @@ export abstract class Transform {
     get clipSpaceToPixelsMatrix(): mat4 { return this._clipSpaceToPixelsMatrix; }
 
     get minElevationForCurrentTile(): number { return this._minElevationForCurrentTile; }
-    set minElevationForCurrentTile(ele: number) {
+    setMinElevationForCurrentTile(ele: number): void {
         this._minElevationForCurrentTile = ele;
     }
 
@@ -175,41 +196,40 @@ export abstract class Transform {
     get pixelsToGLUnits(): [number, number] { return this._pixelsToGLUnits; }
 
     get minZoom(): number { return this._minZoom; }
-    set minZoom(zoom: number) {
+    setMinZoom(zoom: number): void {
         if (this._minZoom === zoom) return;
         this._minZoom = zoom;
-        this.zoom = this.getConstrained(this._center, this.zoom).zoom;
+        this.setZoom(this.zoom); // Re-constrain zoom
     }
 
     get maxZoom(): number { return this._maxZoom; }
-    set maxZoom(zoom: number) {
+    setMaxZoom(zoom: number): void {
         if (this._maxZoom === zoom) return;
         this._maxZoom = zoom;
-        this.zoom = this.getConstrained(this._center, this.zoom).zoom;
+        this.setZoom(this.zoom); // Re-constrain zoom
     }
 
     get minPitch(): number { return this._minPitch; }
-    set minPitch(pitch: number) {
+    setMinPitch(pitch: number): void {
         if (this._minPitch === pitch) return;
         this._minPitch = pitch;
-        this.pitch = Math.max(this.pitch, pitch);
+        this.setPitch(this.pitch); // Re-constrain pitch
     }
 
     get maxPitch(): number { return this._maxPitch; }
-    set maxPitch(pitch: number) {
+    setMaxPitch(pitch: number): void {
         if (this._maxPitch === pitch) return;
         this._maxPitch = pitch;
-        this.pitch = Math.min(this.pitch, pitch);
+        this.setPitch(this.pitch); // Re-constrain pitch
     }
 
     get renderWorldCopies(): boolean { return this._renderWorldCopies; }
-    set renderWorldCopies(renderWorldCopies: boolean) {
+    setRenderWorldCopies(renderWorldCopies: boolean): void {
         if (renderWorldCopies === undefined) {
             renderWorldCopies = true;
         } else if (renderWorldCopies === null) {
             renderWorldCopies = false;
         }
-
         this._renderWorldCopies = renderWorldCopies;
     }
 
@@ -231,7 +251,7 @@ export abstract class Transform {
     get bearing(): number {
         return -this._angle / Math.PI * 180;
     }
-    set bearing(bearing: number) {
+    setBearing(bearing: number): void {
         const b = -wrap(bearing, -180, 180) * Math.PI / 180;
         if (this._angle === b) return;
         this._unmodified = false;
@@ -248,7 +268,7 @@ export abstract class Transform {
     get pitch(): number {
         return this._pitch / Math.PI * 180;
     }
-    set pitch(pitch: number) {
+    setPitch(pitch: number): void {
         const p = clamp(pitch, this.minPitch, this.maxPitch) / 180 * Math.PI;
         if (this._pitch === p) return;
         this._unmodified = false;
@@ -259,7 +279,7 @@ export abstract class Transform {
     get fov(): number {
         return this._fov / Math.PI * 180;
     }
-    set fov(fov: number) {
+    setFov(fov: number): void {
         fov = Math.max(0.01, Math.min(60, fov));
         if (this._fov === fov) return;
         this._unmodified = false;
@@ -268,7 +288,7 @@ export abstract class Transform {
     }
 
     get zoom(): number { return this._zoom; }
-    set zoom(zoom: number) {
+    setZoom(zoom: number): void {
         const constrainedZoom = this.getConstrained(this._center, zoom).zoom;
         if (this._zoom === constrainedZoom) return;
         this._unmodified = false;
@@ -280,7 +300,7 @@ export abstract class Transform {
     }
 
     get center(): LngLat { return this._center; }
-    set center(center: LngLat) {
+    setCenter(center: LngLat): void {
         if (center.lat === this._center.lat && center.lng === this._center.lng) return;
         this._unmodified = false;
         this._center = center;
@@ -292,7 +312,7 @@ export abstract class Transform {
      * Elevation at current center point, meters above sea level
      */
     get elevation(): number { return this._elevation; }
-    set elevation(elevation: number) {
+    setElevation(elevation: number): void {
         if (elevation === this._elevation) return;
         this._elevation = elevation;
         this._constrain();
@@ -300,7 +320,7 @@ export abstract class Transform {
     }
 
     get padding(): PaddingOptions { return this._edgeInsets.toJSON(); }
-    set padding(padding: PaddingOptions) {
+    setPadding(padding: PaddingOptions): void {
         if (this._edgeInsets.equals(padding)) return;
         this._unmodified = false;
         // Update edge-insets in-place
@@ -316,12 +336,10 @@ export abstract class Transform {
         return this._edgeInsets.getCenter(this._width, this._height);
     }
 
-    /**
-     * @internal
-     */
-    get pixelsPerMeter(): number { return this._pixelPerMeter; }
-
     get unmodified(): boolean { return this._unmodified; }
+    setUnmodified(value: boolean): void {
+        this._unmodified = value;
+    }
 
     /**
      * @internal
@@ -483,6 +501,7 @@ export abstract class Transform {
             this._lngRange = [bounds.getWest(), bounds.getEast()];
             this._latRange = [bounds.getSouth(), bounds.getNorth()];
             this._constrain();
+            this._calcMatrices();
         } else {
             this._lngRange = null;
             this._latRange = [-MAX_VALID_LATITUDE, MAX_VALID_LATITUDE];
@@ -571,8 +590,8 @@ export abstract class Transform {
         this._constraining = true;
         const unmodified = this._unmodified;
         const {center, zoom} = this.getConstrained(this.center, this.zoom);
-        this.center = center;
-        this.zoom = zoom;
+        this._center = center;
+        this._zoom = zoom;
         this._unmodified = unmodified;
         this._constraining = false;
     }

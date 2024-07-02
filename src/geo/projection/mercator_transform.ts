@@ -13,6 +13,7 @@ import {ProjectionData} from '../../render/program/projection_program';
 import {pixelsToTileUnits} from '../../source/pixels_to_tile_units';
 import {PointProjection, xyTransformMat4} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
+import {ITransform} from '../transform_interface';
 
 /**
  * Convert from LngLat to world coordinates (Mercator coordinates scaled by 512).
@@ -47,9 +48,10 @@ export function getMercatorHorizon(transform: {pitch: number; cameraToCenterDist
     return Math.tan(Math.PI / 2 - transform.pitch * Math.PI / 180.0) * transform.cameraToCenterDistance * 0.85;
 }
 
-export class MercatorTransform extends Transform {
+export class MercatorTransform implements ITransform {
     private _cameraToCenterDistance: number;
     private _cameraPosition: vec3;
+    private _pixelPerMeter: number = 0;
 
     private _mercatorMatrix: mat4;
     private _viewProjMatrix: mat4;
