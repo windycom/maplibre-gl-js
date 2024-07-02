@@ -817,7 +817,7 @@ export class GlobeTransform extends Transform implements ITransform {
         const newLat = validLat / Math.PI * 180;
         const oldLat = this.center.lat;
         this.setCenter(new LngLat(newLng, clamp(newLat, -90, 90)));
-        this.setZoom(getZoomAdjustment(this, oldLat, this.center.lat));
+        this.setZoom(this.zoom + getZoomAdjustment(this, oldLat, this.center.lat));
     }
 
     override locationPoint(lnglat: LngLat, terrain?: Terrain): Point {

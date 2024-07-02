@@ -595,8 +595,8 @@ export abstract class Transform implements ITransform {
         this._constraining = true;
         const unmodified = this._unmodified;
         const {center, zoom} = this.getConstrained(this.center, this.zoom);
-        this._center = center;
-        this._zoom = zoom;
+        this.setCenter(center);
+        this.setZoom(zoom);
         this._unmodified = unmodified;
         this._constraining = false;
     }
