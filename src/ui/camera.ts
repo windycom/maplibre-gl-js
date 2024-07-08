@@ -14,11 +14,11 @@ import type {LngLatBoundsLike} from '../geo/lng_lat_bounds';
 import type {TaskID} from '../util/task_queue';
 import type {PaddingOptions} from '../geo/edge_insets';
 import type {HandlerManager} from './handler_manager';
-import {scaleZoom, zoomScale} from '../geo/transform_helper';
-import {angularCoordinatesToSurfaceVector, getZoomAdjustment, globeDistanceOfLocationsPixels} from '../geo/projection/globe_transform';
+import {angularCoordinatesToSurfaceVector, getZoomAdjustment, globeDistanceOfLocationsPixels} from '../geo/projection/globe_utils';
 import {mat4, vec3} from 'gl-matrix';
-import {projectToWorldCoordinates, unprojectFromWorldCoordinates} from '../geo/projection/mercator_transform';
+import {projectToWorldCoordinates, unprojectFromWorldCoordinates} from '../geo/projection/mercator_utils';
 import {interpolateLngLatForGlobe} from './globe_control_utils';
+import {scaleZoom, zoomScale} from '../geo/transform_helper';
 /**
  * A [Point](https://github.com/mapbox/point-geometry) or an array of two numbers representing `x` and `y` screen coordinates in pixels.
  *
@@ -758,7 +758,7 @@ export abstract class Camera extends Evented {
             return undefined;
         }
 
-        const zoom = Math.min(tr.scaleZoom(tr.scale * Math.min(scaleX, scaleY)), options.maxZoom);
+        const zoom = Math.min(scaleZoom(tr.scale * Math.min(scaleX, scaleY)), options.maxZoom);
 
         // Calculate center: apply the zoom, the configured offset, as well as offset that exists as a result of padding.
         const offset = Point.convert(options.offset);
@@ -767,10 +767,10 @@ export abstract class Camera extends Evented {
         const paddingOffset = new Point(paddingOffsetX, paddingOffsetY);
         const rotatedPaddingOffset = paddingOffset.rotate(degreesToRadians(bearing));
         const offsetAtInitialZoom = offset.add(rotatedPaddingOffset);
-        const offsetAtFinalZoom = offsetAtInitialZoom.mult(tr.scale / tr.zoomScale(zoom));
+        const offsetAtFinalZoom = offsetAtInitialZoom.mult(tr.scale / zoomScale(zoom));
 
         const center = unprojectFromWorldCoordinates(
-            tr,
+            tr.worldSize,
             // either world diagonal can be used (NW-SE or NE-SW)
             nwWorld.add(seWorld).div(2).sub(offsetAtFinalZoom)
         );
@@ -801,10 +801,10 @@ export abstract class Camera extends Evented {
             const latMid = latNorth + latDiffNorthToSouth * 0.5;
 
             const clonedTr = tr.clone();
-            clonedTr.center = result.center;
-            clonedTr.bearing = result.bearing;
-            clonedTr.pitch = 0;
-            clonedTr.zoom = result.zoom;
+            clonedTr.setCenter(result.center);
+            clonedTr.setBearing(result.bearing);
+            clonedTr.setPitch(0);
+            clonedTr.setZoom(result.zoom);
 
             const testVectors = [
                 angularCoordinatesToSurfaceVector(bounds.getNorthWest()),
@@ -838,7 +838,7 @@ export abstract class Camera extends Evented {
                 return undefined;
             }
 
-            result.zoom = clonedTr.zoom + tr.scaleZoom(smallestNeededScale);
+            result.zoom = clonedTr.zoom + scaleZoom(smallestNeededScale);
         }
 
         return result;
@@ -962,43 +962,43 @@ export abstract class Camera extends Evented {
             // Globe constrain's center isn't dependent on zoom level
             const startingLat = tr.center.lat;
             const constrainedCenter = tr.getConstrained(options.center ? LngLat.convert(options.center) : tr.center, tr.zoom).center;
-            tr.center = constrainedCenter.wrap();
+            tr.setCenter(constrainedCenter.wrap());
             let targetZoom;
             if (optionsApparentZoom) {
-                targetZoom = +options.apparentZoom + getZoomAdjustment(tr, startingLat, constrainedCenter.lat);
+                targetZoom = +options.apparentZoom + getZoomAdjustment(startingLat, constrainedCenter.lat);
             } else if (optionsZoom) {
                 targetZoom = +options.zoom;
             } else {
-                targetZoom = tr.zoom + getZoomAdjustment(tr, startingLat, constrainedCenter.lat);
+                targetZoom = tr.zoom + getZoomAdjustment(startingLat, constrainedCenter.lat);
             }
             if (tr.zoom !== targetZoom) {
                 zoomChanged = true;
-                tr.zoom = targetZoom;
+                tr.setZoom(targetZoom);
             }
         } else {
             const zoom = optionsZoom ? +options.zoom : (optionsApparentZoom ? +options.apparentZoom : tr.zoom);
             if (tr.zoom !== zoom) {
                 zoomChanged = true;
-                tr.zoom = +options.zoom;
+                tr.setZoom(+options.zoom);
             }
 
             if (options.center !== undefined) {
-                tr.center = LngLat.convert(options.center);
+                tr.setCenter(LngLat.convert(options.center));
             }
         }
 
         if ('bearing' in options && tr.bearing !== +options.bearing) {
             bearingChanged = true;
-            tr.bearing = +options.bearing;
+            tr.setBearing(+options.bearing);
         }
 
         if ('pitch' in options && tr.pitch !== +options.pitch) {
             pitchChanged = true;
-            tr.pitch = +options.pitch;
+            tr.setPitch(+options.pitch);
         }
 
         if (options.padding != null && !tr.isPaddingEqual(options.padding)) {
-            tr.padding = options.padding;
+            tr.setPadding(options.padding);
         }
         this._applyUpdatedTransform(tr);
 
@@ -1047,7 +1047,7 @@ export abstract class Camera extends Evented {
 
         const groundDistance = Math.hypot(dx, dy);
 
-        const zoom = this.transform.scaleZoom(this.transform.cameraToCenterDistance / distance3D / this.transform.tileSize);
+        const zoom = scaleZoom(this.transform.cameraToCenterDistance / distance3D / this.transform.tileSize);
         const bearing = (Math.atan2(dx, -dy) * 180) / Math.PI;
         let pitch = (Math.acos(groundDistance / distance3D) * 180) / Math.PI;
         pitch = dz < 0 ? 90 - pitch : 90 + pitch;
@@ -1149,16 +1149,16 @@ export abstract class Camera extends Evented {
                 undefined :
                 +options.zoom;
             const targetMercatorZoom = hasApparentZoom ?
-                desiredApparentZoom + getZoomAdjustment(tr, startCenter.lat, preConstrainCenter.lat) :
+                desiredApparentZoom + getZoomAdjustment(startCenter.lat, preConstrainCenter.lat) :
                 desiredMercatorZoom;
 
             const clonedTr = tr.clone();
-            clonedTr.center = constrainedCenter;
+            clonedTr.setCenter(constrainedCenter);
             if (this._padding) {
-                clonedTr.padding = padding as PaddingOptions;
+                clonedTr.setPadding(padding as PaddingOptions);
             }
-            clonedTr.zoom = targetMercatorZoom;
-            clonedTr.bearing = bearing;
+            clonedTr.setZoom(targetMercatorZoom);
+            clonedTr.setBearing(bearing);
             const clampedPoint = new Point(
                 clamp(tr.centerPoint.x + offsetAsPoint.x, 0, tr.width),
                 clamp(tr.centerPoint.y + offsetAsPoint.y, 0, tr.height)
@@ -1167,17 +1167,17 @@ export abstract class Camera extends Evented {
             // Find final animation targets
             const endCenterWithShift = (options.offset && offsetAsPoint.mag()) > 0 ? clonedTr.center : constrainedCenter;
             const endZoomWithShift = hasApparentZoom ?
-                desiredApparentZoom + getZoomAdjustment(tr, startCenter.lat, endCenterWithShift.lat) :
+                desiredApparentZoom + getZoomAdjustment(startCenter.lat, endCenterWithShift.lat) :
                 desiredMercatorZoom; // Not adjusting this zoom will reduce accuracy of the offset center
 
             // Planet radius for a given zoom level differs according to latitude
             // Convert zooms to what they would be at equator for the given planet radius
-            const normalizedStartZoom = startZoom + getZoomAdjustment(tr, startCenter.lat, 0);
-            const normalizedEndZoom = endZoomWithShift + getZoomAdjustment(tr, endCenterWithShift.lat, 0);
+            const normalizedStartZoom = startZoom + getZoomAdjustment(startCenter.lat, 0);
+            const normalizedEndZoom = endZoomWithShift + getZoomAdjustment(endCenterWithShift.lat, 0);
             const deltaLng = differenceOfAnglesDegrees(startCenter.lng, endCenterWithShift.lng);
             const deltaLat = differenceOfAnglesDegrees(startCenter.lat, endCenterWithShift.lat);
 
-            const finalScale = tr.zoomScale(normalizedEndZoom - normalizedStartZoom);
+            const finalScale = zoomScale(normalizedEndZoom - normalizedStartZoom);
             this._zooming = this._zooming || (endZoomWithShift !== startZoom);
             this._easeId = options.easeId;
             this._prepareEase(eventData, options.noMoveStart, currently);
@@ -1185,10 +1185,10 @@ export abstract class Camera extends Evented {
 
             this._ease((k) => {
                 if (this._rotating) {
-                    tr.bearing = interpolates.number(startBearing, bearing, k);
+                    tr.setBearing(interpolates.number(startBearing, bearing, k));
                 }
                 if (this._pitching) {
-                    tr.pitch = interpolates.number(startPitch, pitch, k);
+                    tr.setPitch(interpolates.number(startPitch, pitch, k));
                 }
 
                 if (around) {
@@ -1205,13 +1205,13 @@ export abstract class Camera extends Evented {
                     // Instead we interpolate LngLat almost directly, but taking into account that
                     // one degree of longitude gets progressively smaller relative to latitude towards the poles.
                     const newCenter = interpolateLngLatForGlobe(startCenter, deltaLng, deltaLat, factor);
-                    tr.center = newCenter.wrap();
+                    tr.setCenter(newCenter.wrap());
                 }
 
                 if (this._zooming) {
                     const normalizedInterpolatedZoom = interpolates.number(normalizedStartZoom, normalizedEndZoom, k);
-                    const interpolatedZoom = normalizedInterpolatedZoom + getZoomAdjustment(tr, 0, tr.center.lat);
-                    tr.zoom = interpolatedZoom;
+                    const interpolatedZoom = normalizedInterpolatedZoom + getZoomAdjustment(0, tr.center.lat);
+                    tr.setZoom(interpolatedZoom);
                 }
 
                 if (this.terrain && !options.freezeElevation) this._updateElevation(k);
@@ -1235,10 +1235,10 @@ export abstract class Camera extends Evented {
             );
             this._normalizeCenter(center);
 
-            const from = projectToWorldCoordinates(tr, locationAtOffset);
-            const delta = projectToWorldCoordinates(tr, center).sub(from);
+            const from = projectToWorldCoordinates(tr.worldSize, locationAtOffset);
+            const delta = projectToWorldCoordinates(tr.worldSize, center).sub(from);
 
-            const finalScale = tr.zoomScale(endZoom - startZoom);
+            const finalScale = zoomScale(endZoom - startZoom);
             this._zooming = this._zooming || (endZoom !== startZoom);
             this._easeId = options.easeId;
             this._prepareEase(eventData, options.noMoveStart, currently);
@@ -1246,13 +1246,13 @@ export abstract class Camera extends Evented {
 
             this._ease((k) => {
                 if (this._zooming) {
-                    tr.zoom = interpolates.number(startZoom, endZoom, k);
+                    tr.setZoom(interpolates.number(startZoom, endZoom, k));
                 }
                 if (this._rotating) {
-                    tr.bearing = interpolates.number(startBearing, bearing, k);
+                    tr.setBearing(interpolates.number(startBearing, bearing, k));
                 }
                 if (this._pitching) {
-                    tr.pitch = interpolates.number(startPitch, pitch, k);
+                    tr.setPitch(interpolates.number(startPitch, pitch, k));
                 }
                 if (this._padding) {
                     tr.interpolatePadding(startPadding, padding as PaddingOptions, k);
@@ -1266,12 +1266,12 @@ export abstract class Camera extends Evented {
                 if (around) {
                     tr.setLocationAtPoint(around, aroundPoint);
                 } else {
-                    const scale = tr.zoomScale(tr.zoom - startZoom);
+                    const scale = zoomScale(tr.zoom - startZoom);
                     const base = endZoom > startZoom ?
                         Math.min(2, finalScale) :
                         Math.max(0.5, finalScale);
                     const speedup = Math.pow(base, 1 - k);
-                    const newCenter = unprojectFromWorldCoordinates(tr, from.add(delta.mult(k * speedup)).mult(scale));
+                    const newCenter = unprojectFromWorldCoordinates(tr.worldSize, from.add(delta.mult(k * speedup)).mult(scale));
                     tr.setLocationAtPoint(tr.renderWorldCopies ? newCenter.wrap() : newCenter, pointAtOffset);
                 }
 
@@ -1507,20 +1507,20 @@ export abstract class Camera extends Evented {
                 startZoom
             ).center;
             if (optionsApparentZoom) {
-                targetZoom = +options.apparentZoom + getZoomAdjustment(tr, tr.center.lat, constrainedCenter.lat);
+                targetZoom = +options.apparentZoom + getZoomAdjustment(tr.center.lat, constrainedCenter.lat);
             } else if (optionsZoom) {
                 targetZoom = +options.zoom;
             } else {
-                targetZoom = tr.zoom + getZoomAdjustment(tr, tr.center.lat, constrainedCenter.lat);
+                targetZoom = tr.zoom + getZoomAdjustment(tr.center.lat, constrainedCenter.lat);
             }
 
             const clonedTr = tr.clone();
-            clonedTr.center = constrainedCenter;
+            clonedTr.setCenter(constrainedCenter);
             if (this._padding) {
-                clonedTr.padding = padding as PaddingOptions;
+                clonedTr.setPadding(padding as PaddingOptions);
             }
-            clonedTr.zoom = targetZoom;
-            clonedTr.bearing = bearing;
+            clonedTr.setZoom(targetZoom);
+            clonedTr.setBearing(bearing);
             const clampedPoint = new Point(
                 clamp(tr.centerPoint.x + offsetAsPoint.x, 0, tr.width),
                 clamp(tr.centerPoint.y + offsetAsPoint.y, 0, tr.height)
@@ -1538,12 +1538,12 @@ export abstract class Camera extends Evented {
 
         this._normalizeCenter(targetCenter);
 
-        const normalizedStartZoom = startZoom + getZoomAdjustment(tr, startCenter.lat, 0);
-        const normalizedTargetZoom = targetZoom + getZoomAdjustment(tr, targetCenter.lat, 0);
-        const scale = this.transform.useGlobeControls ? tr.zoomScale(normalizedTargetZoom - normalizedStartZoom) : tr.zoomScale(targetZoom - startZoom);
+        const normalizedStartZoom = startZoom + getZoomAdjustment(startCenter.lat, 0);
+        const normalizedTargetZoom = targetZoom + getZoomAdjustment(targetCenter.lat, 0);
+        const scale = this.transform.useGlobeControls ? zoomScale(normalizedTargetZoom - normalizedStartZoom) : zoomScale(targetZoom - startZoom);
 
-        const from = projectToWorldCoordinates(tr, locationAtOffset);
-        const delta = projectToWorldCoordinates(tr, targetCenter).sub(from);
+        const from = projectToWorldCoordinates(tr.worldSize, locationAtOffset);
+        const delta = projectToWorldCoordinates(tr.worldSize, targetCenter).sub(from);
 
         let rho = options.curve;
 
@@ -1567,15 +1567,15 @@ export abstract class Camera extends Evented {
             if (this.transform.useGlobeControls) {
                 let normalizedOptionsMinZoom;
                 if (optionsApparentMinZoom) {
-                    normalizedOptionsMinZoom = +options.apparentMinZoom + startZoom + getZoomAdjustment(tr, startCenter.lat, 0);
+                    normalizedOptionsMinZoom = +options.apparentMinZoom + startZoom + getZoomAdjustment(startCenter.lat, 0);
                 } else {
-                    normalizedOptionsMinZoom = +options.minZoom + getZoomAdjustment(tr, targetCenter.lat, 0);
+                    normalizedOptionsMinZoom = +options.minZoom + getZoomAdjustment(targetCenter.lat, 0);
                 }
                 const normalizedMinZoomPreConstrain = Math.min(normalizedOptionsMinZoom, normalizedStartZoom, normalizedTargetZoom);
-                const minZoomPreConstrain = normalizedMinZoomPreConstrain + getZoomAdjustment(tr, 0, targetCenter.lat);
+                const minZoomPreConstrain = normalizedMinZoomPreConstrain + getZoomAdjustment(0, targetCenter.lat);
                 const minZoom = tr.getConstrained(targetCenter, minZoomPreConstrain).zoom;
-                const normalizedMinZoom = minZoom + getZoomAdjustment(tr, targetCenter.lat, 0);
-                wMax = w0 / tr.zoomScale(normalizedMinZoom - normalizedStartZoom);
+                const normalizedMinZoom = minZoom + getZoomAdjustment(targetCenter.lat, 0);
+                wMax = w0 / zoomScale(normalizedMinZoom - normalizedStartZoom);
             } else {
                 let minZoomPreConstrain;
                 if (optionsMinZoom) {
@@ -1585,7 +1585,7 @@ export abstract class Camera extends Evented {
                     minZoomPreConstrain = Math.min(+options.apparentMinZoom + startZoom, startZoom, targetZoom);
                 }
                 const minZoom = tr.getConstrained(targetCenter, minZoomPreConstrain).zoom;
-                wMax = w0 / tr.zoomScale(minZoom - startZoom);
+                wMax = w0 / zoomScale(minZoom - startZoom);
             }
             rho = Math.sqrt(wMax / u1 * 2);
         }
@@ -1666,10 +1666,10 @@ export abstract class Camera extends Evented {
                 const scale = 1 / w(s);
 
                 if (this._rotating) {
-                    tr.bearing = interpolates.number(startBearing, bearing, k);
+                    tr.setBearing(interpolates.number(startBearing, bearing, k));
                 }
                 if (this._pitching) {
-                    tr.pitch = interpolates.number(startPitch, pitch, k);
+                    tr.setPitch(interpolates.number(startPitch, pitch, k));
                 }
                 if (this._padding) {
                     tr.interpolatePadding(startPadding, padding as PaddingOptions, k);
@@ -1681,10 +1681,10 @@ export abstract class Camera extends Evented {
                 const interpolatedCenter = interpolateLngLatForGlobe(startCenter, deltaLng, deltaLat, centerFactor);
 
                 const newCenter = k === 1 ? targetCenter : interpolatedCenter;
-                tr.center = newCenter.wrap();
+                tr.setCenter(newCenter.wrap());
 
-                const interpolatedZoom = normalizedStartZoom + tr.scaleZoom(scale);
-                tr.zoom = k === 1 ? targetZoom : (interpolatedZoom + getZoomAdjustment(tr, 0, newCenter.lat));
+                const interpolatedZoom = normalizedStartZoom + scaleZoom(scale);
+                tr.setZoom(k === 1 ? targetZoom : (interpolatedZoom + getZoomAdjustment(0, newCenter.lat)));
 
                 this._applyUpdatedTransform(tr);
 
@@ -1699,13 +1699,13 @@ export abstract class Camera extends Evented {
                 // s: The distance traveled along the flight path, measured in ρ-screenfuls.
                 const s = k * S;
                 const scale = 1 / w(s);
-                tr.zoom = k === 1 ? targetZoom : startZoom + tr.scaleZoom(scale);
+                tr.setZoom(k === 1 ? targetZoom : startZoom + scaleZoom(scale));
 
                 if (this._rotating) {
-                    tr.bearing = interpolates.number(startBearing, bearing, k);
+                    tr.setBearing(interpolates.number(startBearing, bearing, k));
                 }
                 if (this._pitching) {
-                    tr.pitch = interpolates.number(startPitch, pitch, k);
+                    tr.setPitch(interpolates.number(startPitch, pitch, k));
                 }
                 if (this._padding) {
                     tr.interpolatePadding(startPadding, padding as PaddingOptions, k);
@@ -1716,7 +1716,7 @@ export abstract class Camera extends Evented {
 
                 if (this.terrain && !options.freezeElevation) this._updateElevation(k);
 
-                const newCenter = k === 1 ? targetCenter : unprojectFromWorldCoordinates(tr, from.add(delta.mult(u(s))).mult(scale));
+                const newCenter = k === 1 ? targetCenter : unprojectFromWorldCoordinates(tr.worldSize, from.add(delta.mult(u(s))).mult(scale));
                 tr.setLocationAtPoint(tr.renderWorldCopies ? newCenter.wrap() : newCenter, pointAtOffset);
 
                 this._applyUpdatedTransform(tr);

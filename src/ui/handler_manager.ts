@@ -21,8 +21,8 @@ import {clamp, differenceOfAnglesDegrees, extend, remapSaturate} from '../util/u
 import {browser} from '../util/browser';
 import Point from '@mapbox/point-geometry';
 import {LngLat} from '../geo/lng_lat';
-import {getGlobeRadiusPixels, getZoomAdjustment} from '../geo/projection/globe_transform';
-import {MAX_VALID_LATITUDE} from '../geo/transform';
+import {getGlobeRadiusPixels, getZoomAdjustment} from '../geo/projection/globe_utils';
+import {MAX_VALID_LATITUDE, zoomScale} from '../geo/transform_helper';
 import {vec3} from 'gl-matrix';
 import {computeGlobePanCenter} from './globe_control_utils';
 
@@ -517,10 +517,10 @@ export class HandlerManager {
             const zoomPixel = around;
             const zoomLoc = tr.pointLocation(zoomPixel);
 
-            if (bearingDelta) tr.bearing += bearingDelta;
-            if (pitchDelta) tr.pitch += pitchDelta;
+            if (bearingDelta) tr.setBearing(tr.bearing + bearingDelta);
+            if (pitchDelta) tr.setPitch(tr.pitch + pitchDelta);
             const oldZoom = tr.zoom;
-            if (zoomDelta) tr.zoom += zoomDelta;
+            if (zoomDelta) tr.setZoom(tr.zoom + zoomDelta);
             const actualZoomDelta = tr.zoom - oldZoom;
 
             if (actualZoomDelta !== 0) {
@@ -568,7 +568,7 @@ export class HandlerManager {
                 const radiusFactor = remapSaturate(radius, slowingRadiusStart, slowingRadiusStop, 1.0, slowingRadiusSlowFactor);
 
                 // Compute how much to move towards the zoom location
-                const factor = (1.0 - tr.zoomScale(-actualZoomDelta)) * Math.min(distanceFactor, radiusFactor);
+                const factor = (1.0 - zoomScale(-actualZoomDelta)) * Math.min(distanceFactor, radiusFactor);
 
                 const oldCenterLat = tr.center.lat;
                 const oldZoom = tr.zoom;
@@ -589,11 +589,11 @@ export class HandlerManager {
                 const lngExactToHeuristic = differenceOfAnglesDegrees(exactCenter.lng, heuristicCenter.lng);
                 const latExactToHeuristic = differenceOfAnglesDegrees(exactCenter.lat, heuristicCenter.lat);
 
-                tr.center = new LngLat(
+                tr.setCenter(new LngLat(
                     exactCenter.lng + lngExactToHeuristic * heuristicFactor,
                     exactCenter.lat + latExactToHeuristic * heuristicFactor
-                ).wrap();
-                tr.zoom = oldZoom + getZoomAdjustment(tr, oldCenterLat, tr.center.lat);
+                ).wrap());
+                tr.setZoom(oldZoom + getZoomAdjustment(oldCenterLat, tr.center.lat));
             }
 
             // Terrain needs no special handling in this case, since the drag-pixel-at-horizon problem described below
@@ -605,9 +605,9 @@ export class HandlerManager {
 
                 const oldLat = tr.center.lat;
                 const oldZoom = tr.zoom;
-                tr.center = computeGlobePanCenter(panDelta, tr).wrap();
+                tr.setCenter(computeGlobePanCenter(panDelta, tr).wrap());
                 // Setting the center might adjust zoom to keep globe size constant, we need to avoid adding this adjustment a second time
-                tr.zoom = oldZoom + getZoomAdjustment(tr, oldLat, tr.center.lat);
+                tr.setZoom(oldZoom + getZoomAdjustment(oldLat, tr.center.lat));
             }
         } else {
             // Flat map controls
@@ -616,9 +616,9 @@ export class HandlerManager {
             }
 
             const loc = tr.pointLocation(panDelta ? around.sub(panDelta) : around);
-            if (bearingDelta) tr.bearing += bearingDelta;
-            if (pitchDelta) tr.pitch += pitchDelta;
-            if (zoomDelta) tr.zoom += zoomDelta;
+            if (bearingDelta) tr.setBearing(tr.bearing + bearingDelta);
+            if (pitchDelta) tr.setPitch(tr.pitch + pitchDelta);
+            if (zoomDelta) tr.setZoom(tr.zoom + zoomDelta);
 
             if (!terrain) {
                 tr.setLocationAtPoint(loc, around);
@@ -636,7 +636,7 @@ export class HandlerManager {
                     tr.setLocationAtPoint(loc, around);
                 } else if (combinedEventsInProgress.drag && this._terrainMovement) {
                     // drag map
-                    tr.center = tr.pointLocation(tr.centerPoint.sub(panDelta));
+                    tr.setCenter(tr.pointLocation(tr.centerPoint.sub(panDelta)));
                 } else {
                     tr.setLocationAtPoint(loc, around);
                 }

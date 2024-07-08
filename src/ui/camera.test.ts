@@ -9,7 +9,8 @@ import {LngLat, LngLatLike} from '../geo/lng_lat';
 import {Event} from '../util/evented';
 import {LngLatBounds} from '../geo/lng_lat_bounds';
 import {MercatorTransform} from '../geo/projection/mercator_transform';
-import {GlobeTransform, getZoomAdjustment} from '../geo/projection/globe_transform';
+import {GlobeTransform} from '../geo/projection/globe_transform';
+import {getZoomAdjustment} from '../geo/projection/globe_utils';
 
 beforeEach(() => {
     setMatchMedia();
@@ -2313,7 +2314,7 @@ describe('#transformCameraUpdate', () => {
 });
 
 describe('#jumpTo globe projection', () => {
-    // Test globe specific zoom behaviour
+    // Test globe specific zoom behavior
     test('changing center with no zoom specified should adjusts zoom', () => {
         const camera = createCameraGlobe({zoom: 1});
         camera.jumpTo({center: [0, 40]});
@@ -2478,7 +2479,7 @@ describe('#jumpTo globe projection', () => {
 });
 
 describe('#easeTo globe projection', () => {
-    // Test globe specific zoom behaviour
+    // Test globe specific zoom behavior
     test('changing center with no zoom specified should adjusts zoom', () => {
         const camera = createCameraGlobe({zoom: 1});
         camera.easeTo({center: [0, 40], duration: 0});
@@ -2570,7 +2571,7 @@ describe('#easeTo globe projection', () => {
         expect(camera.getBearing()).toBeCloseTo(0);
     });
 
-    // The behaviour of "offset" differs from mercator because mercator doesn't follow the docs
+    // The behavior of "offset" differs from mercator because mercator doesn't follow the docs
     // that offset should be relative to the *target* map state, not *starting* map state.
     // Globe does follow the docs for now.
 
@@ -2740,7 +2741,7 @@ describe('#easeTo globe projection', () => {
 });
 
 describe('#flyTo globe projection', () => {
-    // Test globe specific zoom behaviour
+    // Test globe specific zoom behavior
     test('changing center with no zoom specified should adjusts zoom', () => {
         const camera = createCameraGlobe({zoom: 1});
         camera.flyTo({center: [0, 40], animate: false});
@@ -3016,9 +3017,9 @@ describe('#flyTo globe projection', () => {
         const camera = createCameraGlobe();
         camera.setZoom(18);
         let ascended;
-        const normalizedStartZoom = camera.getZoom() + getZoomAdjustment(camera.transform, camera.getCenter().lat, 0);
+        const normalizedStartZoom = camera.getZoom() + getZoomAdjustment(camera.getCenter().lat, 0);
         camera.on('zoom', () => {
-            const normalizedZoom = camera.getZoom() + getZoomAdjustment(camera.transform, camera.getCenter().lat, 0);
+            const normalizedZoom = camera.getZoom() + getZoomAdjustment(camera.getCenter().lat, 0);
             if (normalizedZoom < normalizedStartZoom) {
                 ascended = true;
             }
@@ -3346,7 +3347,7 @@ describe('#flyTo globe projection', () => {
         const target = new LngLat(12, 34);
 
         camera.on('moveend', () => {
-            expect(camera.getZoom()).toBeCloseTo(2 + getZoomAdjustment(transform, start.lat, target.lat));
+            expect(camera.getZoom()).toBeCloseTo(2 + getZoomAdjustment(start.lat, target.lat));
             const {lng, lat} = camera.getCenter();
             expect(lng).toBeCloseTo(12);
             expect(lat).toBeCloseTo(34);

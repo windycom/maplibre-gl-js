@@ -10,6 +10,7 @@ import type {Map} from '../map';
 import type Point from '@mapbox/point-geometry';
 import type {AroundCenterOptions} from './two_fingers_touch';
 import {Handler} from '../handler_manager';
+import {scaleZoom, zoomScale} from '../../geo/transform_helper';
 
 // deltaY value for mouse scroll wheel identification
 const wheelZoomDelta = 4.000244140625;
@@ -276,8 +277,8 @@ export class ScrollZoomHandler implements Handler {
                 scale = 1 / scale;
             }
 
-            const fromScale = typeof this._targetZoom === 'number' ? zoomScale(this._targetZoom) : tr.scale;
-            const fromScale = this._targetZoom === null ? tr.scale : tr.zoomScale(this._targetZoom);
+            const fromScale = this._targetZoom === null ? tr.scale : zoomScale(this._targetZoom);
+            this._targetZoom = Math.min(tr.maxZoom, Math.max(tr.minZoom, scaleZoom(fromScale * scale)));
 
             // if this is a mouse wheel, refresh the starting zoom and easing
             // function we're using to smooth out the zooming between wheel
@@ -290,8 +291,7 @@ export class ScrollZoomHandler implements Handler {
             this._delta = 0;
         }
 
-        const targetZoom = typeof this._targetZoom === 'number' ?
-            this._targetZoom : tr.zoom;
+        const targetZoom = this._targetZoom === null ? tr.zoom : this._targetZoom;
         const startZoom = this._startZoom;
         const easing = this._easing;
 
