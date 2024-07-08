@@ -1152,4 +1152,28 @@ export class GlobeTransform implements ITransform {
             return sphereSurfacePointToCoordinates(closestOnHorizon);
         }
     }
+
+    getCustomLayerArgs() {
+        const projectionData = this.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
+        return {
+            farZ: this.farZ,
+            nearZ: this.nearZ,
+            fov: this.fov * Math.PI / 180, // convert to radians
+            modelViewProjectionMatrix: this.modelViewProjectionMatrix,
+            projectionMatrix: this.projectionMatrix,
+            shader: {
+                variantName: this._projectionInstance.shaderVariantName,
+                vertexShaderPrelude: `const float PI = 3.141592653589793;\nuniform mat4 u_projection_matrix;\n${this._projectionInstance.shaderPreludeCode.vertexSource}`,
+                define: this._projectionInstance.shaderDefine,
+            },
+            // Convert all uniforms to plain arrays
+            uniforms: {
+                'u_projection_matrix': [...projectionData.u_projection_matrix.values()],
+                'u_projection_tile_mercator_coords': [...projectionData.u_projection_tile_mercator_coords.values()],
+                'u_projection_clipping_plane': [...projectionData.u_projection_clipping_plane.values()],
+                'u_projection_transition': projectionData.u_projection_transition,
+                'u_projection_fallback_matrix': [...projectionData.u_projection_fallback_matrix.values()],
+            }
+        };
+    }
 }

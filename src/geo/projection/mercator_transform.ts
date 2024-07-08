@@ -883,4 +883,14 @@ export class MercatorTransform implements ITransform {
             this.calculatePosMatrix(coord.toUnwrapped());
         }
     }
+
+    getCustomLayerArgs() {
+        return {
+            farZ: this.farZ,
+            nearZ: this.nearZ,
+            fov: this.fov * Math.PI / 180, // convert to radians
+            modelViewProjectionMatrix: this.modelViewProjectionMatrix,
+            projectionMatrix: this.projectionMatrix
+        };
+    }
 }

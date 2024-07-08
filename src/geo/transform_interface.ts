@@ -308,8 +308,6 @@ export interface ITransform extends ITransformGetters {
      */
     setMaxBounds(bounds?: LngLatBounds | null): void;
 
-    customLayerMatrix(): mat4;
-
     /**
      * Get center lngLat and zoom to ensure that longitude and latitude bounds are respected and regions beyond the map bounds are not displayed.
      */
@@ -448,4 +446,15 @@ export interface ITransform extends ITransformGetters {
      * @param coords - Array of tile IDs that will be rendered.
      */
     precacheTiles(coords: Array<OverscaledTileID>): void;
+
+    /**
+     * Returns a matrix for converting from mercator coordinates [0..1] to clip space.
+     * If such projection cannot be described by a matrix for a given projection, return the mercator version of this matrix.
+     */
+    customLayerMatrix(): mat4;
+
+    /**
+     * Returns an object with projection-specific arguments to be passed to custom layers.
+     */
+    getCustomLayerArgs(): any;
 }
