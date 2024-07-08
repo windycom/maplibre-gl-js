@@ -6,6 +6,7 @@ import {extend} from '../../util/util';
 import {fakeServer, FakeServer} from 'nise';
 import {Style} from '../../style/style';
 import {GeoJSONSourceSpecification, LayerSpecification} from '@maplibre/maplibre-gl-style-spec';
+import {LngLatBounds} from '../../geo/lng_lat_bounds';
 
 let server: FakeServer;
 
@@ -113,10 +114,9 @@ describe('#setStyle', () => {
 
     test('style transform overrides unmodified map transform', done => {
         const map = new Map({container: window.document.createElement('div')} as any as MapOptions);
-        map.transform['_lngRange'] = [-120, 140];
-        map.transform['_latRange'] = [-60, 80];
+        map.transform.setMaxBounds(new LngLatBounds([-120, -60], [140, 80]));
         map.transform.resize(600, 400);
-        expect(map.transform.zoom).toBe(0.6983039737971014);
+        expect(map.transform.zoom).toBe(0.6983039737971013);
         expect(map.transform.unmodified).toBeTruthy();
         map.setStyle(createStyle());
         map.on('style.load', () => {
@@ -473,6 +473,46 @@ describe('#getStyle', () => {
         map.setStyle(style, {diff: false});
         expect(map.style && map.style !== previousStyle).toBeTruthy();
         expect(spy).not.toHaveBeenCalled();
+    });
+
+    describe('#setSky', () => {
+        test('calls style setSky when set', () => {
+            const map = createMap();
+            const spy = jest.fn();
+            map.style.setSky = spy;
+            map.setSky({'horizon-fog-blend': 0.5});
+
+            expect(spy).toHaveBeenCalled();
+        });
+    });
+
+    describe('#getSky', () => {
+        test('returns undefined when not set', () => {
+            const map = createMap();
+            expect(map.getSky()).toBeUndefined();
+        });
+    });
+
+    describe('#setLight', () => {
+        test('calls style setLight when set', () => {
+            const map = createMap();
+            const spy = jest.fn();
+            map.style.setLight = spy;
+            map.setLight({anchor: 'viewport'});
+
+            expect(spy).toHaveBeenCalled();
+        });
+    });
+
+    describe('#getLight', () => {
+        test('calls style getLight when invoked', () => {
+            const map = createMap();
+            const spy = jest.fn();
+            map.style.getLight = spy;
+            map.getLight();
+
+            expect(spy).toHaveBeenCalled();
+        });
     });
 
 });

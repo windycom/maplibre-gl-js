@@ -1,10 +1,9 @@
-import {mat4, vec3, vec4} from 'gl-matrix';
-import {MAX_VALID_LATITUDE, Transform, TransformUpdateResult} from '../transform';
+import {mat2, mat4, vec3, vec4} from 'gl-matrix';
+import {MAX_VALID_LATITUDE, TransformHelper, TransformUpdateResult} from '../transform_helper';
 import {Tile} from '../../source/tile';
-import {MercatorTransform, translatePosition} from './mercator_transform';
+import {MercatorTransform} from './mercator_transform';
 import {LngLat, earthRadius} from '../lng_lat';
-import {EXTENT} from '../../data/extent';
-import {clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, mod, wrap} from '../../util/util';
+import {clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, warnOnce} from '../../util/util';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
 import {browser} from '../../util/browser';
@@ -14,20 +13,20 @@ import {ProjectionData} from '../../render/program/projection_program';
 import {MercatorCoordinate} from '../mercator_coordinate';
 import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
+import {ITransform} from '../transform_interface';
+import {PaddingOptions} from '../edge_insets';
+import {translatePosition} from './mercator_utils';
+import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
+import {EXTENT} from '../../data/extent';
 
-export function getGlobeCircumferencePixels(transform: {worldSize: number; center: {lat: number}}): number {
-    const radius = getGlobeRadiusPixels(transform.worldSize, transform.center.lat);
-    const circumference = 2.0 * Math.PI * radius;
-    return circumference;
-}
-
-export function globeDistanceOfLocationsPixels(transform: {worldSize: number; center: {lat: number}}, a: LngLat, b: LngLat): number {
-    const vecA = angularCoordinatesToSurfaceVector(a);
-    const vecB = angularCoordinatesToSurfaceVector(b);
-    const dot = vec3.dot(vecA, vecB);
-    const radians = Math.acos(dot);
-    const circumference = getGlobeCircumferencePixels(transform);
-    return radians / (2.0 * Math.PI) * circumference;
+// These functions create **64** bit float vectors and matrices, unlike default gl-matrix functions.
+function createVec4(): vec4 { return new Float64Array(4) as any; }
+function createVec3(): vec3 { return new Float64Array(3) as any; }
+function createMat4(): mat4 { return new Float64Array(16) as any; }
+function createIdentityMat4(): mat4 {
+    const m = new Float64Array(16) as any;
+    mat4.identity(m);
+    return m;
 }
 
 /**
@@ -42,82 +41,14 @@ function tileCoordinatesToMercatorCoordinates(inTileX: number, inTileY: number, 
 }
 
 /**
- * For given mercator coordinates in range 0..1, returns the angular coordinates on the sphere's surface, in radians.
- */
-export function mercatorCoordinatesToAngularCoordinatesRadians(mercatorX: number, mercatorY: number): [number, number] {
-    const sphericalX = mod(mercatorX * Math.PI * 2.0 + Math.PI, Math.PI * 2);
-    const sphericalY = 2.0 * Math.atan(Math.exp(Math.PI - (mercatorY * Math.PI * 2.0))) - Math.PI * 0.5;
-    return [sphericalX, sphericalY];
-}
-
-/**
- * For a given longitude and latitude (note: in radians) returns the normalized vector from the planet center to the specified place on the surface.
- * @param lngRadians - Longitude in radians.
- * @param latRadians - Latitude in radians.
- */
-export function angularCoordinatesRadiansToVector(lngRadians: number, latRadians: number): vec3 {
-    const len = Math.cos(latRadians);
-    const vec = createVec3();
-    vec[0] = Math.sin(lngRadians) * len;
-    vec[1] = Math.sin(latRadians);
-    vec[2] = Math.cos(lngRadians) * len;
-    return vec;
-}
-
-/**
- * For a given longitude and latitude (note: in degrees) returns the normalized vector from the planet center to the specified place on the surface.
- */
-export function angularCoordinatesToSurfaceVector(lngLat: LngLat): vec3 {
-    return angularCoordinatesRadiansToVector(lngLat.lng * Math.PI / 180, lngLat.lat * Math.PI / 180);
-}
-
-export function getGlobeRadiusPixels(worldSize: number, latitudeDegrees: number) {
-    // We want zoom levels to be consistent between globe and flat views.
-    // This means that the pixel size of features at the map center point
-    // should be the same for both globe and flat view.
-    // For this reason we scale the globe up when map center is nearer to the poles.
-    return worldSize / (2.0 * Math.PI) / Math.cos(latitudeDegrees * Math.PI / 180);
-}
-
-/**
- * Given a 3D point on the surface of a unit sphere, returns its angular coordinates in degrees.
- * The input vector must be normalized.
- */
-export function sphereSurfacePointToCoordinates(surface: vec3): LngLat {
-    const latRadians = Math.asin(surface[1]);
-    const latDegrees = latRadians / Math.PI * 180.0;
-    const lengthXZ = Math.sqrt(surface[0] * surface[0] + surface[2] * surface[2]);
-    if (lengthXZ > 1e-6) {
-        const projX = surface[0] / lengthXZ;
-        const projZ = surface[2] / lengthXZ;
-        const acosZ = Math.acos(projZ);
-        const lngRadians = (projX > 0) ? acosZ : -acosZ;
-        const lngDegrees = lngRadians / Math.PI * 180.0;
-        return new LngLat(wrap(lngDegrees, -180, 180), latDegrees);
-    } else {
-        return new LngLat(0.0, latDegrees);
-    }
-}
-
-/**
- * Computes how much to modify zoom to keep the globe size constant when changing latitude.
- * @param transform - An instance of any transform. Does not have any relation on the computed values.
- * @param oldLat - Latitude before change.
- * @param newLat - Latitude after change.
- * @returns A value to add to zoom level used for old latitude to keep same planet radius at new latitude.
- */
-export function getZoomAdjustment(transform: { scaleZoom(scale: number): number }, oldLat: number, newLat: number): number {
-    const oldCircumference = Math.cos(oldLat * Math.PI / 180.0);
-    const newCircumference = Math.cos(newLat * Math.PI / 180.0);
-    return transform.scaleZoom(newCircumference / oldCircumference);
-}
-
-/**
  * Returns the angle in radians between two 2D vectors.
- * The angle is how much must the first vector be rotated clockwise
- * (assuming X is right and Y is down) so that it points in the same
- * direction as the second vector.
- * Returns an angle in range -PI..PI.
+ * The angle is signed and describes how much the first vector would need to be be rotated clockwise
+ * (assuming X is right and Y is down) so that it points in the same direction as the second vector.
+ * @param vec1x - The X component of the first vector.
+ * @param vec1y - The Y component of the first vector.
+ * @param vec2x - The X component of the second vector.
+ * @param vec2y - The Y component of the second vector.
+ * @returns The signed angle between the two vectors, in range -PI..PI.
  */
 function angleToRotateBetweenVectors2D(vec1x: number, vec1y: number, vec2x: number, vec2y: number): number {
     // Normalize both vectors
@@ -138,16 +69,172 @@ function angleToRotateBetweenVectors2D(vec1x: number, vec1y: number, vec2x: numb
     }
 }
 
-function createVec4(): vec4 { return new Float64Array(4) as any; }
-function createVec3(): vec3 { return new Float64Array(3) as any; }
-function createMat4(): mat4 { return new Float64Array(16) as any; }
-function createIdentityMat4(): mat4 {
-    const m = new Float64Array(16) as any;
-    mat4.identity(m);
-    return m;
-}
+export class GlobeTransform implements ITransform {
+    private _helper: TransformHelper;
 
-export class GlobeTransform extends Transform {
+    //
+    // Implementation of transform getters and setters
+    //
+
+    get pixelsToClipSpaceMatrix(): mat4 {
+        return this._helper.pixelsToClipSpaceMatrix;
+    }
+    get clipSpaceToPixelsMatrix(): mat4 {
+        return this._helper.clipSpaceToPixelsMatrix;
+    }
+    get pixelsToGLUnits(): [number, number] {
+        return this._helper.pixelsToGLUnits;
+    }
+    get centerOffset(): Point {
+        return this._helper.centerOffset;
+    }
+    get size(): Point {
+        return this._helper.size;
+    }
+    get rotationMatrix(): mat2 {
+        return this._helper.rotationMatrix;
+    }
+    get centerPoint(): Point {
+        return this._helper.centerPoint;
+    }
+    get pixelsPerMeter(): number {
+        return this._helper.pixelsPerMeter;
+    }
+    setMinZoom(zoom: number): void {
+        this._helper.setMinZoom(zoom);
+    }
+    setMaxZoom(zoom: number): void {
+        this._helper.setMaxZoom(zoom);
+    }
+    setMinPitch(pitch: number): void {
+        this._helper.setMinPitch(pitch);
+    }
+    setMaxPitch(pitch: number): void {
+        this._helper.setMaxPitch(pitch);
+    }
+    setRenderWorldCopies(renderWorldCopies: boolean): void {
+        this._helper.setRenderWorldCopies(renderWorldCopies);
+    }
+    setBearing(bearing: number): void {
+        this._helper.setBearing(bearing);
+    }
+    setPitch(pitch: number): void {
+        this._helper.setPitch(pitch);
+    }
+    setFov(fov: number): void {
+        this._helper.setFov(fov);
+    }
+    setZoom(zoom: number): void {
+        this._helper.setZoom(zoom);
+    }
+    setCenter(center: LngLat): void {
+        this._helper.setCenter(center);
+    }
+    setElevation(elevation: number): void {
+        this._helper.setElevation(elevation);
+    }
+    setMinElevationForCurrentTile(elevation: number): void {
+        this._helper.setMinElevationForCurrentTile(elevation);
+    }
+    setPadding(padding: PaddingOptions): void {
+        this._helper.setPadding(padding);
+    }
+    interpolatePadding(start: PaddingOptions, target: PaddingOptions, t: number): void {
+        return this._helper.interpolatePadding(start, target, t);
+    }
+    isPaddingEqual(padding: PaddingOptions): boolean {
+        return this._helper.isPaddingEqual(padding);
+    }
+    coveringZoomLevel(options: { roundZoom?: boolean; tileSize: number }): number {
+        return this._helper.coveringZoomLevel(options);
+    }
+    resize(width: number, height: number): void {
+        this._helper.resize(width, height);
+    }
+    getMaxBounds(): LngLatBounds {
+        return this._helper.getMaxBounds();
+    }
+    setMaxBounds(bounds?: LngLatBounds): void {
+        this._helper.setMaxBounds(bounds);
+    }
+    getCameraQueryGeometry(queryGeometry: Point[]): Point[] {
+        return this._helper.getCameraQueryGeometry(this.getCameraPoint(), queryGeometry);
+    }
+
+    get tileSize(): number {
+        return this._helper.tileSize;
+    }
+    get tileZoom(): number {
+        return this._helper.tileZoom;
+    }
+    get scale(): number {
+        return this._helper.scale;
+    }
+    get worldSize(): number {
+        return this._helper.worldSize;
+    }
+    get width(): number {
+        return this._helper.width;
+    }
+    get height(): number {
+        return this._helper.height;
+    }
+    get angle(): number {
+        return this._helper.angle;
+    }
+    get lngRange(): [number, number] {
+        return this._helper.lngRange;
+    }
+    get latRange(): [number, number] {
+        return this._helper.latRange;
+    }
+    get minZoom(): number {
+        return this._helper.minZoom;
+    }
+    get maxZoom(): number {
+        return this._helper.maxZoom;
+    }
+    get zoom(): number {
+        return this._helper.zoom;
+    }
+    get center(): LngLat {
+        return this._helper.center;
+    }
+    get minPitch(): number {
+        return this._helper.minPitch;
+    }
+    get maxPitch(): number {
+        return this._helper.maxPitch;
+    }
+    get pitch(): number {
+        return this._helper.pitch;
+    }
+    get bearing(): number {
+        return this._helper.bearing;
+    }
+    get fov(): number {
+        return this._helper.fov;
+    }
+    get elevation(): number {
+        return this._helper.elevation;
+    }
+    get minElevationForCurrentTile(): number {
+        return this._helper.minElevationForCurrentTile;
+    }
+    get padding(): PaddingOptions {
+        return this._helper.padding;
+    }
+    get unmodified(): boolean {
+        return this._helper.unmodified;
+    }
+    get renderWorldCopies(): boolean {
+        return this._helper.renderWorldCopies;
+    }
+
+    //
+    // Implementation of globe transform
+    //
+
     private _cachedClippingPlane: vec4 = createVec4();
 
     // Transition handling
@@ -158,6 +245,7 @@ export class GlobeTransform extends Transform {
 
     private _skipNextAnimation: boolean = true;
 
+    private _projectionMatrix: mat4 = createIdentityMat4();
     private _globeViewProjMatrix: mat4 = createIdentityMat4();
     private _globeViewProjMatrixNoCorrection: mat4 = createIdentityMat4();
     private _globeViewProjMatrixNoCorrectionInverted: mat4 = createIdentityMat4();
@@ -185,8 +273,14 @@ export class GlobeTransform extends Transform {
     private _mercatorTransform: MercatorTransform;
     private _initialized: boolean = false;
 
+    private _nearZ;
+    private _farZ;
+
     public constructor(globeProjection: GlobeProjection, globeProjectionEnabled: boolean = true) {
-        super();
+        this._helper = new TransformHelper({
+            calcMatrices: () => { this._calcMatrices(); },
+            getConstrained: (center, zoom) => { return this.getConstrained(center, zoom); }
+        });
         this._globeProjectionEnabled = globeProjectionEnabled;
         this._globeness = globeProjectionEnabled ? 1 : 0; // When transform is cloned for use in symbols, `_updateAnimation` function which usually sets this value never gets called.
         this._projectionInstance = globeProjection;
@@ -194,25 +288,27 @@ export class GlobeTransform extends Transform {
         this._initialized = true;
     }
 
-    override clone(): Transform {
+    clone(): ITransform {
         const clone = new GlobeTransform(null, this._globeProjectionEnabled);
         clone.apply(this);
         this.newFrameUpdate();
         return clone;
     }
 
-    public override apply(that: Transform): void {
-        super.apply(that);
+    public apply(that: ITransform): void {
+        this._helper.apply(that);
         this._mercatorTransform.apply(this);
     }
 
-    public override get modelViewProjectionMatrix(): mat4 { return this._globeRendering ? this._globeViewProjMatrixNoCorrection : this._mercatorTransform.modelViewProjectionMatrix; }
+    public get projectionMatrix(): mat4 { return this._globeRendering ? this._projectionMatrix : this._mercatorTransform.projectionMatrix; }
 
-    public override get inverseProjectionMatrix(): mat4 { return this._globeRendering ? this._globeProjMatrixInverted : this._mercatorTransform.inverseProjectionMatrix; }
+    public get modelViewProjectionMatrix(): mat4 { return this._globeRendering ? this._globeViewProjMatrixNoCorrection : this._mercatorTransform.modelViewProjectionMatrix; }
 
-    public override get useGlobeControls(): boolean { return this._globeRendering; }
+    public get inverseProjectionMatrix(): mat4 { return this._globeRendering ? this._globeProjMatrixInverted : this._mercatorTransform.inverseProjectionMatrix; }
 
-    public override get cameraPosition(): vec3 {
+    public get useGlobeControls(): boolean { return this._globeRendering; }
+
+    public get cameraPosition(): vec3 {
         // Return a copy - don't let outside code mutate our precomputed camera position.
         const copy = createVec3(); // Ensure the resulting vector is float64s
         copy[0] = this._cameraPosition[0];
@@ -221,10 +317,13 @@ export class GlobeTransform extends Transform {
         return copy;
     }
 
-    override get cameraToCenterDistance(): number {
+    get cameraToCenterDistance(): number {
         // Globe uses the same cameraToCenterDistance as mercator.
         return this._mercatorTransform.cameraToCenterDistance;
     }
+
+    public get nearZ(): number { return this._nearZ; }
+    public get farZ(): number { return this._farZ; }
 
     /**
      * Returns whether globe view is allowed.
@@ -254,7 +353,7 @@ export class GlobeTransform extends Transform {
         }
     }
 
-    override translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
+    translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
         // In the future, some better translation for globe and other weird projections should be implemented here,
         // especially for the translateAnchor==='viewport' case.
         return translatePosition(this, tile, translate, translateAnchor);
@@ -264,7 +363,7 @@ export class GlobeTransform extends Transform {
      * Should be called at the beginning of every frame to synchronize the transform with the underlying projection.
      * May change the transform's state - do not call on cloned transforms that should behave immutably!
      */
-    override newFrameUpdate(): TransformUpdateResult {
+    newFrameUpdate(): TransformUpdateResult {
         if (this._projectionInstance) {
             // Note: the _globeRendering field is only updated inside this function.
             // This function should never be called on a cloned transform, thus ensuring that
@@ -323,21 +422,21 @@ export class GlobeTransform extends Transform {
         this._globeness = easeCubicInOut(this._globeness); // Smooth animation
 
         if (oldGlobeness !== this._globeness) {
-            this.center = new LngLat(
+            this.setCenter(new LngLat(
                 this._mercatorTransform.center.lng + differenceOfAnglesDegrees(this._mercatorTransform.center.lng, this.center.lng) * this._globeness,
                 lerp(this._mercatorTransform.center.lat, this.center.lat, this._globeness)
-            );
-            this.zoom = lerp(this._mercatorTransform.zoom, this.zoom, this._globeness);
+            ));
+            this.setZoom(lerp(this._mercatorTransform.zoom, this.zoom, this._globeness));
         }
     }
 
-    override isRenderingDirty(): boolean {
+    isRenderingDirty(): boolean {
         const now = browser.now();
         // Globe transition
         return (now - this._lastGlobeChangeTime) / 1000.0 < (Math.max(globeConstants.globeTransitionTimeSeconds, globeConstants.zoomTransitionTimeSeconds) + 0.2);
     }
 
-    override getProjectionData(overscaledTileID: OverscaledTileID, aligned?: boolean, ignoreTerrainMatrix?: boolean): ProjectionData {
+    getProjectionData(overscaledTileID: OverscaledTileID, aligned?: boolean, ignoreTerrainMatrix?: boolean): ProjectionData {
         const data = this._mercatorTransform.getProjectionData(overscaledTileID, aligned, ignoreTerrainMatrix);
 
         // Set 'u_projection_matrix' to actual globe transform
@@ -438,8 +537,8 @@ export class GlobeTransform extends Transform {
     }
 
     public transformLightDirection(dir: vec3): vec3 {
-        const sphereX = this._center.lng * Math.PI / 180.0;
-        const sphereY = this._center.lat * Math.PI / 180.0;
+        const sphereX = this._helper._center.lng * Math.PI / 180.0;
+        const sphereY = this._helper._center.lat * Math.PI / 180.0;
 
         const len = Math.cos(sphereY);
         const spherePos: vec3 = [
@@ -466,7 +565,7 @@ export class GlobeTransform extends Transform {
     }
 
     private getAnimatedLatitude() {
-        return lerp(this._mercatorTransform.center.lat, this._center.lat, this._globeness);
+        return lerp(this._mercatorTransform.center.lat, this._helper._center.lat, this._globeness);
     }
 
     public getPixelScale(): number {
@@ -510,8 +609,10 @@ export class GlobeTransform extends Transform {
         };
     }
 
-    protected override _calcMatrices(): void {
-        super._calcMatrices();
+    private _calcMatrices(): void {
+        if (!this._helper._width || !this._helper._height) {
+            return;
+        }
 
         if (!this._initialized) {
             return;
@@ -528,7 +629,16 @@ export class GlobeTransform extends Transform {
         // Construct a completely separate matrix for globe view
         const globeMatrix = createMat4();
         const globeMatrixUncorrected = createMat4();
-        mat4.perspective(globeMatrix, this.fov * Math.PI / 180, this.width / this.height, 0.5, this.cameraToCenterDistance + globeRadiusPixels * 2.0); // just set the far plane far enough - we will calculate our own z in the vertex shader anyway
+        this._nearZ = 0.5;
+        this._farZ = this.cameraToCenterDistance + globeRadiusPixels * 2.0; // just set the far plane far enough - we will calculate our own z in the vertex shader anyway
+        mat4.perspective(globeMatrix, this.fov * Math.PI / 180, this.width / this.height, this._nearZ, this._farZ);
+
+        // Apply center of perspective offset
+        const offset = this.centerOffset;
+        globeMatrix[8] = -offset.x * 2 / this._helper._width;
+        globeMatrix[9] = offset.y * 2 / this._helper._height;
+        this._projectionMatrix = mat4.clone(globeMatrix);
+
         this._globeProjMatrixInverted = createMat4();
         mat4.invert(this._globeProjMatrixInverted, globeMatrix);
         mat4.translate(globeMatrix, globeMatrix, [0, 0, -this.cameraToCenterDistance]);
@@ -568,12 +678,19 @@ export class GlobeTransform extends Transform {
         this._cachedClippingPlane = this._computeClippingPlane(globeRadiusPixels);
     }
 
-    override getVisibleUnwrappedCoordinates(tileID: CanonicalTileID): UnwrappedTileID[] {
+    calculateFogMatrix(_unwrappedTileID: UnwrappedTileID): mat4 {
+        warnOnce('calculateFogMatrix is not supported on globe projection.');
+        const m = createMat4();
+        mat4.identity(m);
+        return m;
+    }
+
+    getVisibleUnwrappedCoordinates(tileID: CanonicalTileID): UnwrappedTileID[] {
         // Globe: TODO: implement for globe #3887
         return this._mercatorTransform.getVisibleUnwrappedCoordinates(tileID);
     }
 
-    override coveringTiles(options: {
+    coveringTiles(options: {
         tileSize: number; minzoom?: number;
         maxzoom?: number; roundZoom?: boolean; reparseOverscaled?: boolean; renderWorldCopies?: boolean; terrain?: Terrain;
     }): OverscaledTileID[] {
@@ -581,26 +698,26 @@ export class GlobeTransform extends Transform {
         return this._mercatorTransform.coveringTiles(options);
     }
 
-    override recalculateZoom(terrain: Terrain): void {
+    recalculateZoom(terrain: Terrain): void {
         this._mercatorTransform.recalculateZoom(terrain);
         this.apply(this._mercatorTransform);
     }
 
-    override customLayerMatrix(): mat4 {
+    customLayerMatrix(): mat4 {
         // Globe: TODO
         return this._mercatorTransform.customLayerMatrix();
     }
 
-    override maxPitchScaleFactor(): number {
+    maxPitchScaleFactor(): number {
         // Using mercator version of this should be good enough approximation for globe.
         return this._mercatorTransform.maxPitchScaleFactor();
     }
 
-    override getCameraPoint(): Point {
+    getCameraPoint(): Point {
         return this._mercatorTransform.getCameraPoint();
     }
 
-    override lngLatToCameraDepth(lngLat: LngLat, elevation: number): number {
+    lngLatToCameraDepth(lngLat: LngLat, elevation: number): number {
         if (!this._globeRendering) {
             return this._mercatorTransform.lngLatToCameraDepth(lngLat, elevation);
         }
@@ -614,11 +731,11 @@ export class GlobeTransform extends Transform {
         return result[2] / result[3];
     }
 
-    override precacheTiles(coords: OverscaledTileID[]): void {
+    precacheTiles(coords: OverscaledTileID[]): void {
         this._mercatorTransform.precacheTiles(coords);
     }
 
-    override getBounds(): LngLatBounds {
+    getBounds(): LngLatBounds {
         if (!this._globeRendering) {
             return this._mercatorTransform.getBounds();
         }
@@ -677,14 +794,14 @@ export class GlobeTransform extends Transform {
         // Sometimes the poles might end up not being on the horizon,
         // thus not being detected as the northernmost/southernmost points.
         // We fix that here.
-        if (this.isSurfacePointVisible([0, 1, 0])) {
+        if (this.isSurfacePointOnScreen([0, 1, 0])) {
             // North pole is visible
             // This also means that the entire longitude range must be visible
             boundsArray[3] = 90;
             boundsArray[0] = -180;
             boundsArray[2] = 180;
         }
-        if (this.isSurfacePointVisible([0, -1, 0])) {
+        if (this.isSurfacePointOnScreen([0, -1, 0])) {
             // South pole is visible
             boundsArray[1] = -90;
             boundsArray[0] = -180;
@@ -694,11 +811,11 @@ export class GlobeTransform extends Transform {
         return new LngLatBounds(boundsArray);
     }
 
-    override getConstrained(lngLat: LngLat, zoom: number): { center: LngLat; zoom: number } {
+    getConstrained(lngLat: LngLat, zoom: number): { center: LngLat; zoom: number } {
         // Globe: TODO: respect _lngRange, _latRange
         // It is possible to implement exact constrain for globe, but I don't think it is worth the effort.
         const constrainedLat = clamp(lngLat.lat, -MAX_VALID_LATITUDE, MAX_VALID_LATITUDE);
-        const constrainedZoom = clamp(+zoom, this.minZoom + getZoomAdjustment(this, 0, constrainedLat), this.maxZoom);
+        const constrainedZoom = clamp(+zoom, this.minZoom + getZoomAdjustment(0, constrainedLat), this.maxZoom);
         return {
             center: new LngLat(
                 lngLat.lng,
@@ -712,7 +829,7 @@ export class GlobeTransform extends Transform {
      * Note: automatically adjusts zoom to keep planet size consistent
      * (same size before and after a {@link setLocationAtPoint} call).
      */
-    override setLocationAtPoint(lnglat: LngLat, point: Point): void {
+    setLocationAtPoint(lnglat: LngLat, point: Point): void {
         if (!this._globeRendering) {
             this._mercatorTransform.setLocationAtPoint(lnglat, point);
             this.apply(this._mercatorTransform);
@@ -810,11 +927,11 @@ export class GlobeTransform extends Transform {
         const newLng = validLng / Math.PI * 180;
         const newLat = validLat / Math.PI * 180;
         const oldLat = this.center.lat;
-        this.center = new LngLat(newLng, clamp(newLat, -90, 90));
-        this.zoom += getZoomAdjustment(this, oldLat, this.center.lat);
+        this.setCenter(new LngLat(newLng, clamp(newLat, -90, 90)));
+        this.setZoom(this.zoom + getZoomAdjustment(oldLat, this.center.lat));
     }
 
-    override locationPoint(lnglat: LngLat, terrain?: Terrain): Point {
+    locationPoint(lnglat: LngLat, terrain?: Terrain): Point {
         if (!this._globeRendering) {
             return this._mercatorTransform.locationPoint(lnglat, terrain);
         }
@@ -822,9 +939,18 @@ export class GlobeTransform extends Transform {
         const pos = angularCoordinatesToSurfaceVector(lnglat);
 
         if (terrain) {
-            const elevation = terrain.getElevationForLngLatZoom(lnglat, this._tileZoom);
+            const elevation = terrain.getElevationForLngLatZoom(lnglat, this._helper._tileZoom);
             vec3.scale(pos, pos, 1.0 + elevation / earthRadius);
         }
+
+        return this._projectSurfacePointToScreen(pos);
+    }
+
+    /**
+     * Projects a given vector on the surface of a unit sphere (or possible above the surface)
+     * and returns its coordinates on screen in pixels.
+     */
+    private _projectSurfacePointToScreen(pos: vec3): Point {
         const projected = createVec4();
         vec4.transformMat4(projected, [...pos, 1] as vec4, this._globeViewProjMatrixNoCorrection);
         projected[0] /= projected[3];
@@ -835,7 +961,7 @@ export class GlobeTransform extends Transform {
         );
     }
 
-    override pointCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
+    pointCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
         if (!this._globeRendering || terrain) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
@@ -844,7 +970,7 @@ export class GlobeTransform extends Transform {
         return MercatorCoordinate.fromLngLat(this.unprojectScreenPoint(p));
     }
 
-    override pointLocation(p: Point, terrain?: Terrain): LngLat {
+    pointLocation(p: Point, terrain?: Terrain): LngLat {
         if (!this._globeRendering || terrain) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
@@ -853,7 +979,7 @@ export class GlobeTransform extends Transform {
         return this.unprojectScreenPoint(p);
     }
 
-    override isPointOnMapSurface(p: Point, terrain?: Terrain): boolean {
+    isPointOnMapSurface(p: Point, terrain?: Terrain): boolean {
         if (!this._globeRendering) {
             return this._mercatorTransform.isPointOnMapSurface(p, terrain);
         }
@@ -869,7 +995,7 @@ export class GlobeTransform extends Transform {
     /**
      * Computes normalized direction of a ray from the camera to the given screen pixel.
      */
-    override getRayDirectionFromPixel(p: Point): vec3 {
+    getRayDirectionFromPixel(p: Point): vec3 {
         const pos = createVec4();
         pos[0] = (p.x / this.width) * 2.0 - 1.0;
         pos[1] = ((p.y / this.height) * 2.0 - 1.0) * -1.0;
@@ -900,6 +1026,25 @@ export class GlobeTransform extends Transform {
         // dot(position on sphere, occlusion plane equation)
         const dotResult = plane[0] * p[0] + plane[1] * p[1] + plane[2] * p[2] + plane[3];
         return dotResult >= 0.0;
+    }
+
+    /**
+     * Returns whether surface point is visible on screen.
+     * It must both project to a pixel in screen bounds and not be occluded by the planet.
+     */
+    private isSurfacePointOnScreen(vec: vec3): boolean {
+        if (!this.isSurfacePointVisible(vec)) {
+            return false;
+        }
+
+        const projected = createVec4();
+        vec4.transformMat4(projected, [...vec, 1] as vec4, this._globeViewProjMatrixNoCorrection);
+        projected[0] /= projected[3];
+        projected[1] /= projected[3];
+        projected[2] /= projected[3];
+        return projected[0] > -1 && projected[0] < 1 &&
+            projected[1] > -1 && projected[1] < 1 &&
+            projected[2] > -1 && projected[2] < 1;
     }
 
     /**

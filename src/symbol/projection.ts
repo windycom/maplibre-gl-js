@@ -5,7 +5,7 @@ import * as symbolSize from './symbol_size';
 import {addDynamicAttributes} from '../data/bucket/symbol_bucket';
 
 import type {Painter} from '../render/painter';
-import type {Transform} from '../geo/transform';
+import type {ITransform} from '../geo/transform_interface';
 import type {SymbolBucket} from '../data/bucket/symbol_bucket';
 import type {
     GlyphOffsetArray,
@@ -94,7 +94,7 @@ export type PointProjection = {
 
 export function getPitchedLabelPlaneMatrix(
     rotateWithMap: boolean,
-    transform: Transform,
+    transform: ITransform,
     pixelsToTileUnits: number) {
     const m = mat4.create();
     mat4.scale(m, m, [1 / pixelsToTileUnits, 1 / pixelsToTileUnits, 1]);
@@ -111,7 +111,7 @@ export function getPitchedLabelPlaneMatrix(
 export function getGlCoordMatrix(
     pitchWithMap: boolean,
     rotateWithMap: boolean,
-    transform: Transform,
+    transform: ITransform,
     pixelsToTileUnits: number) {
     if (pitchWithMap) {
         const m = mat4.create();
@@ -239,15 +239,35 @@ export function updateLineLabels(bucket: SymbolBucket,
         const fontSize = symbolSize.evaluateSizeForFeature(sizeData, partiallyEvaluatedSize, symbol);
         const pitchScaledFontSize = pitchWithMap ? fontSize / perspectiveRatio : fontSize * perspectiveRatio;
 
-        const placeUnflipped: any = placeGlyphsAlongLine(projectionContext, pitchedLabelPlaneMatrixInverse, symbol, pitchScaledFontSize, false /*unflipped*/, keepUpright,
-            bucket.glyphOffsetArray, dynamicLayoutVertexArray, aspectRatio, rotateToLine);
+        const placeUnflipped = placeGlyphsAlongLine({
+            projectionContext,
+            pitchedLabelPlaneMatrixInverse,
+            symbol,
+            fontSize: pitchScaledFontSize,
+            flip: false,
+            keepUpright,
+            glyphOffsetArray: bucket.glyphOffsetArray,
+            dynamicLayoutVertexArray,
+            aspectRatio,
+            rotateToLine,
+        });
 
         useVertical = placeUnflipped.useVertical;
 
         if (placeUnflipped.notEnoughRoom || useVertical ||
             (placeUnflipped.needsFlipping &&
-             (placeGlyphsAlongLine(projectionContext, pitchedLabelPlaneMatrixInverse, symbol, pitchScaledFontSize, true /*flipped*/, keepUpright,
-                 bucket.glyphOffsetArray, dynamicLayoutVertexArray, aspectRatio, rotateToLine) as any).notEnoughRoom)) {
+                placeGlyphsAlongLine({
+                    projectionContext,
+                    pitchedLabelPlaneMatrixInverse,
+                    symbol,
+                    fontSize: pitchScaledFontSize,
+                    flip: true, // flipped
+                    keepUpright,
+                    glyphOffsetArray: bucket.glyphOffsetArray,
+                    dynamicLayoutVertexArray,
+                    aspectRatio,
+                    rotateToLine,
+                }).notEnoughRoom)) {
             hideGlyphs(symbol.numGlyphs, dynamicLayoutVertexArray);
         }
     }
@@ -309,7 +329,12 @@ export function placeFirstAndLastGlyph(
     return {first: firstPlacedGlyph, last: lastPlacedGlyph};
 }
 
-function requiresOrientationChange(writingMode, firstPoint, lastPoint, aspectRatio) {
+type OrientationChangeType = {
+    useVertical?: boolean;
+    needsFlipping?: boolean;
+};
+
+function requiresOrientationChange(writingMode, firstPoint, lastPoint, aspectRatio): OrientationChangeType {
     if (writingMode === WritingMode.horizontal) {
         // On top of choosing whether to flip, choose whether to render this version of the glyphs or the alternate
         // vertical glyphs. We can't just filter out vertical glyphs in the horizontal range because the horizontal
@@ -330,6 +355,23 @@ function requiresOrientationChange(writingMode, firstPoint, lastPoint, aspectRat
     return null;
 }
 
+type GlyphLinePlacementResult = OrientationChangeType & {
+    notEnoughRoom?: boolean;
+}
+
+type GlyphLinePlacementArgs = {
+    projectionContext: SymbolProjectionContext;
+    pitchedLabelPlaneMatrixInverse: mat4;
+    symbol: any; // PlacedSymbolStruct
+    fontSize: number;
+    flip: boolean;
+    keepUpright: boolean;
+    glyphOffsetArray: GlyphOffsetArray;
+    dynamicLayoutVertexArray: StructArray;
+    aspectRatio: number;
+    rotateToLine: boolean;
+}
+
 /*
 * Place first and last glyph along the line projected to label plane, and if they fit
 * iterate through all the intermediate glyphs, calculating their label plane positions
@@ -338,7 +380,20 @@ function requiresOrientationChange(writingMode, firstPoint, lastPoint, aspectRat
 * Finally, add resulting glyph position calculations to dynamicLayoutVertexArray for
 * upload to the GPU
 */
-function placeGlyphsAlongLine(projectionContext: SymbolProjectionContext, pitchedLabelPlaneMatrixInverse: mat4, symbol, fontSize: number, flip: boolean, keepUpright: boolean, glyphOffsetArray: GlyphOffsetArray, dynamicLayoutVertexArray: StructArray, aspectRatio: number, rotateToLine: boolean) {
+function placeGlyphsAlongLine(args: GlyphLinePlacementArgs): GlyphLinePlacementResult {
+    const {
+        projectionContext,
+        pitchedLabelPlaneMatrixInverse,
+        symbol,
+        fontSize,
+        flip,
+        keepUpright,
+        glyphOffsetArray,
+        dynamicLayoutVertexArray,
+        aspectRatio,
+        rotateToLine
+    } = args;
+
     const fontScale = fontSize / 24;
     const lineOffsetX = symbol.lineOffsetX * fontScale;
     const lineOffsetY = symbol.lineOffsetY * fontScale;
@@ -494,7 +549,7 @@ export type SymbolProjectionContext = {
      * True when line glyphs are projected onto the map, instead of onto the viewport.
      */
     pitchWithMap: boolean;
-    transform: Transform;
+    transform: ITransform;
     unwrappedTileID: UnwrappedTileID;
     /**
      * Viewport width.

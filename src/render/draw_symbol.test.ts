@@ -10,12 +10,12 @@ import {drawSymbols} from './draw_symbol';
 import * as symbolProjection from '../symbol/projection';
 import type {ZoomHistory} from '../style/zoom_history';
 import type {Map} from '../ui/map';
-import {Transform} from '../geo/transform';
+import {ITransform} from '../geo/transform_interface';
 import type {EvaluationParameters} from '../style/evaluation_parameters';
 import type {SymbolLayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {Style} from '../style/style';
 import {MercatorProjection} from '../geo/projection/mercator';
-import {translatePosition} from '../geo/projection/mercator_transform';
+import {translatePosition} from '../geo/projection/mercator_utils';
 
 jest.mock('./painter');
 jest.mock('./program');
@@ -24,6 +24,28 @@ jest.mock('../source/tile');
 jest.mock('../data/bucket/symbol_bucket');
 jest.mock('../symbol/projection');
 (symbolProjection.getPitchedLabelPlaneMatrix as jest.Mock).mockReturnValue(mat4.create());
+
+function createMockTransform() {
+    return {
+        pitch: 0,
+        labelPlaneMatrix: mat4.create(),
+        getCircleRadiusCorrection: () => 1,
+        angle: 0,
+        zoom: 0,
+        getProjectionData(_canonical, fallback) {
+            return {
+                'u_projection_matrix': fallback,
+                'u_projection_tile_mercator_coords': [0, 0, 1, 1],
+                'u_projection_clipping_plane': [0, 0, 0, 0],
+                'u_projection_transition': 0.0,
+                'u_projection_fallback_matrix': fallback,
+            };
+        },
+        translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
+            return translatePosition({angle: 0, zoom: 0}, tile, translate, translateAnchor);
+        }
+    } as any as ITransform;
+}
 
 describe('drawSymbol', () => {
     test('should not do anything', () => {
@@ -223,27 +245,4 @@ describe('drawSymbol', () => {
 
         expect(programMock.draw).toHaveBeenCalledTimes(0);
     });
-
 });
-
-function createMockTransform() {
-    return {
-        pitch: 0,
-        labelPlaneMatrix: mat4.create(),
-        getCircleRadiusCorrection: () => 1,
-        angle: 0,
-        zoom: 0,
-        getProjectionData(_canonical, fallback) {
-            return {
-                'u_projection_matrix': fallback,
-                'u_projection_tile_mercator_coords': [0, 0, 1, 1],
-                'u_projection_clipping_plane': [0, 0, 0, 0],
-                'u_projection_transition': 0.0,
-                'u_projection_fallback_matrix': fallback,
-            };
-        },
-        translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
-            return translatePosition({angle: 0, zoom: 0}, tile, translate, translateAnchor);
-        }
-    } as any as Transform;
-}

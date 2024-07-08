@@ -57,12 +57,16 @@ import terrainDepthFrag from './terrain_depth.fragment.glsl.g';
 import terrainCoordsFrag from './terrain_coords.fragment.glsl.g';
 import terrainFrag from './terrain.fragment.glsl.g';
 import terrainVert from './terrain.vertex.glsl.g';
+import terrainVertDepth from './terrain_depth.vertex.glsl.g';
+import terrainVertCoords from './terrain_coords.vertex.glsl.g';
 import projectionErrorMeasurementVert from './projection_error_measurement.vertex.glsl.g';
 import projectionErrorMeasurementFrag from './projection_error_measurement.fragment.glsl.g';
 import projectionMercatorVert from './_projection_mercator.vertex.glsl.g';
 import projectionGlobeVert from './_projection_globe.vertex.glsl.g';
 import atmosphereFrag from './atmosphere.fragment.glsl.g';
 import atmosphereVert from './atmosphere.vertex.glsl.g';
+import skyFrag from './sky.fragment.glsl.g';
+import skyVert from './sky.vertex.glsl.g';
 
 export type PreparedShader = {
     fragmentSource: string;
@@ -101,10 +105,11 @@ export const shaders = {
     symbolSDF: compile(symbolSDFFrag, symbolSDFVert),
     symbolTextAndIcon: compile(symbolTextAndIconFrag, symbolTextAndIconVert),
     terrain: compile(terrainFrag, terrainVert),
-    terrainDepth: compile(terrainDepthFrag, terrainVert),
-    terrainCoords: compile(terrainCoordsFrag, terrainVert),
+    terrainDepth: compile(terrainDepthFrag, terrainVertDepth),
+    terrainCoords: compile(terrainCoordsFrag, terrainVertCoords),
     projectionErrorMeasurement: compile(projectionErrorMeasurementFrag, projectionErrorMeasurementVert),
     atmosphere: compile(atmosphereFrag, atmosphereVert),
+    sky: compile(skyFrag, skyVert)
 };
 
 // Expand #pragmas to #ifdefs.

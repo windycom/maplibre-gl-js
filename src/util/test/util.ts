@@ -6,12 +6,12 @@ import {Evented} from '../evented';
 import {SourceSpecification, StyleSpecification, TerrainSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {MercatorTransform} from '../../geo/projection/mercator_transform';
 import {RequestManager} from '../request_manager';
-import {Transform} from '../../geo/transform';
+import {ITransform} from '../../geo/transform_interface';
 import {Style} from '../../style/style';
 
 export class StubMap extends Evented {
     style: Style;
-    transform: Transform;
+    transform: ITransform;
     private _requestManager: RequestManager;
     _terrain: TerrainSpecification;
 
@@ -32,7 +32,7 @@ export class StubMap extends Evented {
     setTerrain(terrain) { this._terrain = terrain; }
     getTerrain() { return this._terrain; }
 
-    migrateProjection(newTransform: Transform) {
+    migrateProjection(newTransform: ITransform) {
         newTransform.apply(this.transform);
         this.transform = newTransform;
     }
@@ -215,4 +215,11 @@ export function createStyle() {
         sources: {},
         layers: []
     } as StyleSpecification;
+}
+
+export function expectToBeCloseToArray(actual: Array<number>, expected: Array<number>, precision?: number) {
+    expect(actual).toHaveLength(expected.length);
+    for (let i = 0; i < expected.length; i++) {
+        expect(actual[i]).toBeCloseTo(expected[i], precision);
+    }
 }

@@ -27,13 +27,15 @@ import {drawFillExtrusion} from './draw_fill_extrusion';
 import {drawHillshade} from './draw_hillshade';
 import {drawRaster} from './draw_raster';
 import {drawBackground} from './draw_background';
-import {drawAtmosphere} from './draw_atmosphere';
 import {drawDebug, drawDebugPadding, selectDebugSource} from './draw_debug';
 import {drawCustom} from './draw_custom';
 import {drawDepth, drawCoords} from './draw_terrain';
 import {OverscaledTileID} from '../source/tile_id';
+import {drawSky, drawAtmosphere} from './draw_sky';
+import {Mesh} from './mesh';
+import {MercatorShaderDefine, MercatorShaderVariantKey} from '../geo/projection/mercator';
 
-import type {Transform} from '../geo/transform';
+import type {ITransform} from '../geo/transform_interface';
 import type {Style} from '../style/style';
 import type {StyleLayer} from '../style/style_layer';
 import type {CrossFaded} from '../style/properties';
@@ -44,10 +46,8 @@ import type {VertexBuffer} from '../gl/vertex_buffer';
 import type {IndexBuffer} from '../gl/index_buffer';
 import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
 import type {ResolvedImage} from '@maplibre/maplibre-gl-style-spec';
-import {RenderToTexture} from './render_to_texture';
-import {Mesh} from './mesh';
-import {MercatorShaderDefine, MercatorShaderVariantKey} from '../geo/projection/mercator';
-import {ProjectionData} from './program/projection_program';
+import type {ProjectionData} from './program/projection_program';
+import type {RenderToTexture} from './render_to_texture';
 
 export type RenderPass = 'offscreen' | 'opaque' | 'translucent';
 
@@ -67,7 +67,7 @@ type PainterOptions = {
  */
 export class Painter {
     context: Context;
-    transform: Transform;
+    transform: ITransform;
     renderToTexture: RenderToTexture;
     _tileTextures: {
         [_: number]: Array<Texture>;
@@ -117,7 +117,7 @@ export class Painter {
     // every time the camera-matrix changes the terrain-facilitators will be redrawn.
     terrainFacilitator: {dirty: boolean; matrix: mat4; renderTime: number};
 
-    constructor(gl: WebGLRenderingContext | WebGL2RenderingContext, transform: Transform) {
+    constructor(gl: WebGLRenderingContext | WebGL2RenderingContext, transform: ITransform) {
         this.context = new Context(gl);
         this.transform = transform;
         this._tileTextures = {};
@@ -499,6 +499,9 @@ export class Painter {
         // Clear buffers in preparation for drawing to the main framebuffer
         this.context.clear({color: options.showOverdrawInspector ? Color.black : Color.transparent, depth: 1});
         this.clearStencil();
+
+        // draw sky first to not overwrite symbols
+        if (this.style.stylesheet.sky) drawSky(this, this.style.sky);
 
         this._showOverdrawInspector = options.showOverdrawInspector;
         this.depthRangeFor3D = [0, 1 - ((style._order.length + 2) * this.numSublayers * this.depthEpsilon)];

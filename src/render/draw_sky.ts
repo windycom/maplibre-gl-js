@@ -1,21 +1,63 @@
 import {StencilMode} from '../gl/stencil_mode';
 import {DepthMode} from '../gl/depth_mode';
 import {CullFaceMode} from '../gl/cull_face_mode';
-import {atmosphereUniformValues} from './program/atmosphere_program';
-
-import type {Painter} from './painter';
-import {ColorMode} from '../gl/color_mode';
-import Sky from '../style/sky';
-import {Light} from '../style/light';
-import {AtmosphereBoundsArray, TriangleIndexArray} from '../data/array_types.g';
-import {atmosphereAttributes} from '../data/atmosphere_attributes';
-import {Mesh} from './mesh';
+import {PosArray, TriangleIndexArray} from '../data/array_types.g';
+import posAttributes from '../data/pos_attributes';
 import {SegmentVector} from '../data/segment';
-import {Transform} from '../geo/transform';
+import {skyUniformValues} from './program/sky_program';
+import {atmosphereUniformValues} from './program/atmosphere_program';
+import {Sky} from '../style/sky';
+import {Light} from '../style/light';
+import {Mesh} from './mesh';
 import {mat4, vec3, vec4} from 'gl-matrix';
-import {getGlobeRadiusPixels} from '../geo/projection/globe_transform';
+import {ITransform} from '../geo/transform_interface';
+import {ColorMode} from '../gl/color_mode';
+import type {Painter} from './painter';
+import {Context} from '../gl/context';
+import {getGlobeRadiusPixels} from '../geo/projection/globe_utils';
 
-function getSunPos(light: Light, transform: Transform): vec3 {
+function getMesh(context: Context, sky: Sky): Mesh {
+    // Create the Sky mesh the first time we need it
+    if (!sky.mesh) {
+        const vertexArray = new PosArray();
+        vertexArray.emplaceBack(-1, -1);
+        vertexArray.emplaceBack(1, -1);
+        vertexArray.emplaceBack(1, 1);
+        vertexArray.emplaceBack(-1, 1);
+
+        const indexArray = new TriangleIndexArray();
+        indexArray.emplaceBack(0, 1, 2);
+        indexArray.emplaceBack(0, 2, 3);
+
+        sky.mesh = new Mesh(
+            context.createVertexBuffer(vertexArray, posAttributes.members),
+            context.createIndexBuffer(indexArray),
+            SegmentVector.simpleSegment(0, 0, vertexArray.length, indexArray.length)
+        );
+    }
+
+    return sky.mesh;
+}
+
+export function drawSky(painter: Painter, sky: Sky) {
+    const context = painter.context;
+    const gl = context.gl;
+
+    const skyUniforms = skyUniformValues(sky, painter.style.map.transform, painter.pixelRatio);
+
+    const depthMode = new DepthMode(gl.LEQUAL, DepthMode.ReadWrite, [0, 1]);
+    const stencilMode = StencilMode.disabled;
+    const colorMode = painter.colorModeForRenderPass();
+    const program = painter.useProgram('sky');
+
+    const mesh = getMesh(context, sky);
+
+    program.draw(context, gl.TRIANGLES, depthMode, stencilMode, colorMode,
+        CullFaceMode.disabled, skyUniforms, null, undefined, 'sky', mesh.vertexBuffer,
+        mesh.indexBuffer, mesh.segments);
+}
+
+function getSunPos(light: Light, transform: ITransform): vec3 {
     const _lp = light.properties.get('position');
     const lightPos = [-_lp.x, -_lp.y, -_lp.z] as vec3;
 
@@ -43,8 +85,8 @@ export function drawAtmosphere(painter: Painter, sky: Sky, light: Light) {
     const sunPos = getSunPos(light, painter.transform);
 
     const projectionData = transform.getProjectionData(null);
+    const atmosphereBlend = sky.properties.get('atmosphere-blend') * projectionData.u_projection_transition;
 
-    const atmosphereBlend = sky.getAtmosphereBlend() * projectionData.u_projection_transition;
     if (atmosphereBlend === 0) {
         // Don't draw anything if atmosphere is fully transparent
         return;
@@ -68,26 +110,7 @@ export function drawAtmosphere(painter: Painter, sky: Sky, light: Light) {
 
     const uniformValues = atmosphereUniformValues(sunPos, atmosphereBlend, globePosition, globeRadius, invProjMatrix);
 
-    // Create the atmosphere mesh the first time we need it
-    if (!sky.atmosphereMesh) {
-        const vertexArray = new AtmosphereBoundsArray();
-        vertexArray.emplaceBack(-1, -1, 0.0, 1.0);
-        vertexArray.emplaceBack(+1, -1, 0.0, 1.0);
-        vertexArray.emplaceBack(+1, +1, 0.0, 1.0);
-        vertexArray.emplaceBack(-1, +1, 0.0, 1.0);
-
-        const indexArray = new TriangleIndexArray();
-        indexArray.emplaceBack(0, 1, 2);
-        indexArray.emplaceBack(0, 2, 3);
-
-        sky.atmosphereMesh = new Mesh(
-            context.createVertexBuffer(vertexArray, atmosphereAttributes.members),
-            context.createIndexBuffer(indexArray),
-            SegmentVector.simpleSegment(0, 0, vertexArray.length, indexArray.length)
-        );
-    }
-
-    const mesh = sky.atmosphereMesh;
+    const mesh = getMesh(context, sky);
 
     program.draw(context, gl.TRIANGLES, depthMode, StencilMode.disabled, ColorMode.alphaBlended, CullFaceMode.disabled, uniformValues, null, null, 'atmosphere', mesh.vertexBuffer, mesh.indexBuffer, mesh.segments);
 }

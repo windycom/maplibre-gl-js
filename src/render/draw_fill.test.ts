@@ -6,7 +6,7 @@ import {Painter} from './painter';
 import {Program} from './program';
 import type {ZoomHistory} from '../style/zoom_history';
 import type {Map} from '../ui/map';
-import {Transform} from '../geo/transform';
+import {ITransform} from '../geo/transform_interface';
 import type {EvaluationParameters} from '../style/evaluation_parameters';
 import type {FillLayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {Style} from '../style/style';
@@ -14,7 +14,7 @@ import {FillStyleLayer} from '../style/style_layer/fill_style_layer';
 import {drawFill} from './draw_fill';
 import {FillBucket} from '../data/bucket/fill_bucket';
 import {ProgramConfiguration, ProgramConfigurationSet} from '../data/program_configuration';
-import {translatePosition} from '../geo/projection/mercator_transform';
+import {translatePosition} from '../geo/projection/mercator_utils';
 
 jest.mock('./painter');
 jest.mock('./program');
@@ -36,7 +36,6 @@ describe('drawFill', () => {
 
         const sourceCacheMock = new SourceCache(null as any, null as any, null as any);
         (sourceCacheMock.getTile as jest.Mock).mockReturnValue(mockTile);
-        //sourceCacheMock.getTile = (_: any) => mockTile;
         sourceCacheMock.map = {showCollisionBoxes: false} as any as Map;
 
         drawFill(painterMock, sourceCacheMock, layer, [mockTile.tileID]);
@@ -101,7 +100,7 @@ describe('drawFill', () => {
             translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
                 return translatePosition({angle: 0, zoom: 0}, tile, translate, translateAnchor);
             }
-        } as any as Transform;
+        } as any as ITransform;
         painterMock.options = {} as any;
         painterMock.style = {
             map: {
