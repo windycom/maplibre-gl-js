@@ -1803,7 +1803,9 @@ describe('#flyTo', () => {
         };
         camera.transform = {
             elevation: 0,
-            recalculateZoom: () => true
+            recalculateZoom: () => true,
+            setMinElevationForCurrentTile: (_) => {},
+            setElevation: (e) => { camera.transform.elevation = e; },
         };
 
         camera._prepareElevation([10, 0]);
@@ -3311,8 +3313,8 @@ describe('#flyTo globe projection', () => {
 
     test('respects transform\'s maxZoom', done => {
         const transform = createCameraGlobe().transform;
-        transform.minZoom = 2;
-        transform.maxZoom = 10;
+        transform.setMinZoom(2);
+        transform.setMaxZoom(10);
 
         const camera = attachSimulateFrame(new CameraMock(transform, {} as any));
         camera._update = () => {};
@@ -3337,8 +3339,8 @@ describe('#flyTo globe projection', () => {
 
     test('respects transform\'s minZoom', done => {
         const transform = createCameraGlobe().transform;
-        transform.minZoom = 2;
-        transform.maxZoom = 10;
+        transform.setMinZoom(2);
+        transform.setMaxZoom(10);
 
         const camera = attachSimulateFrame(new CameraMock(transform, {} as any));
         camera._update = () => {};
