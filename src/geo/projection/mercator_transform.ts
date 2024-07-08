@@ -824,6 +824,10 @@ export class MercatorTransform implements ITransform {
         return false;
     }
 
+    isLocationOccluded(_: LngLat): boolean {
+        return false;
+    }
+
     getPixelScale(): number {
         return 1.0;
     }

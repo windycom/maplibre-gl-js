@@ -524,9 +524,9 @@ export class GlobeTransform implements ITransform {
         return sphere;
     }
 
-    public isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
+    public isOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
         if (!this._globeRendering) {
-            return this._mercatorTransform.isTilePositionOccluded(x, y, unwrappedTileID);
+            return this._mercatorTransform.isOccluded(x, y, unwrappedTileID);
         }
         const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID);
         return !this.isSurfacePointVisible(spherePos);

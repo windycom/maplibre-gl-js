@@ -387,6 +387,13 @@ export interface ITransform extends ITransformGetters {
 
     /**
      * @internal
+     * Returns whether the supplied location is occluded in this projection.
+     * For example during globe rendering a location on the backfacing side of the globe is occluded.
+     */
+    isLocationOccluded(lngLat: LngLat): boolean;
+
+    /**
+     * @internal
      */
     getPixelScale(): number;
 
