@@ -1159,6 +1159,14 @@ export class GlobeTransform implements ITransform {
 
     getCustomLayerArgs() {
         const projectionData = this.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
+        // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
+        // the shader projection machinery still expects inputs to be in tile units range [0..EXTENT].
+        // Since custom layers are expected to supply mercator coordinates [0..1], we need to rescale
+        // the fallback projection matrix by EXTENT.
+        // Note that the regular globe projection matrix does not need to be modified, since the rescaling happens by setting
+        // the `u_projection_tile_mercator_coords` uniform correctly later.
+        const fallbackMatrixScaled = createMat4();
+        mat4.scale(fallbackMatrixScaled, projectionData.u_projection_fallback_matrix, [EXTENT, EXTENT, 1]);
         return {
             farZ: this.farZ,
             nearZ: this.nearZ,
@@ -1173,10 +1181,12 @@ export class GlobeTransform implements ITransform {
             // Convert all uniforms to plain arrays
             uniforms: {
                 'u_projection_matrix': [...projectionData.u_projection_matrix.values()],
-                'u_projection_tile_mercator_coords': [...projectionData.u_projection_tile_mercator_coords.values()],
+                // This next uniform is used to convert from [0..EXTENT] to [0..1] mercator coordinates for a given tile,
+                // but since custom layers are expected to already supply mercator coordinates, it is set to identity (offset 0,0 and scale 1,1).
+                'u_projection_tile_mercator_coords': [0, 0, 1, 1],
                 'u_projection_clipping_plane': [...projectionData.u_projection_clipping_plane.values()],
                 'u_projection_transition': projectionData.u_projection_transition,
-                'u_projection_fallback_matrix': [...projectionData.u_projection_fallback_matrix.values()],
+                'u_projection_fallback_matrix': [...fallbackMatrixScaled.values()],
             }
         };
     }
