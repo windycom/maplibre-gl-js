@@ -39,12 +39,7 @@ function attachSimulateFrame(camera) {
 function createCamera(options?) {
     options = options || {};
 
-    const transform = options.globe ? new GlobeTransform({} as any, true) : new MercatorTransform();
-    transform.setMinZoom(0);
-    transform.setMaxZoom(20);
-    transform.setMinPitch(0);
-    transform.setMaxPitch(60);
-    transform.setRenderWorldCopies(options.renderWorldCopies);
+    const transform = new MercatorTransform(0, 20, 0, 60, options.renderWorldCopies);
     transform.resize(512, 512);
 
     const camera = attachSimulateFrame(new CameraMock(transform, {} as any))
@@ -1804,8 +1799,8 @@ describe('#flyTo', () => {
         camera.transform = {
             elevation: 0,
             recalculateZoom: () => true,
-            setMinElevationForCurrentTile: (_) => {},
-            setElevation: (e) => { camera.transform.elevation = e; },
+            setMinElevationForCurrentTile: (_a) => true,
+            setElevation: (e) => { camera.transform.elevation = e; }
         };
 
         camera._prepareElevation([10, 0]);
