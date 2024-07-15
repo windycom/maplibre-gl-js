@@ -3,6 +3,53 @@ import UnitBezier from '@mapbox/unitbezier';
 import {isOffscreenCanvasDistorted} from './offscreen_canvas_distorted';
 import type {Size} from './image';
 import type {WorkerGlobalScopeInterface} from './web_worker';
+import {vec3, vec4} from 'gl-matrix';
+import {pixelsToTileUnits} from '../source/pixels_to_tile_units';
+import {OverscaledTileID} from '../source/tile_id';
+
+/**
+ * Returns a translation in tile units that correctly incorporates the view angle and the *-translate and *-translate-anchor properties.
+ * @param inViewportPixelUnitsUnits - True when the units accepted by the matrix are in viewport pixels instead of tile units.
+ */
+export function translatePosition(
+    transform: { angle: number; zoom: number },
+    tile: { tileID: OverscaledTileID; tileSize: number },
+    translate: [number, number],
+    translateAnchor: 'map' | 'viewport',
+    inViewportPixelUnitsUnits: boolean = false
+): [number, number] {
+    if (!translate[0] && !translate[1]) return [0, 0];
+
+    const angle = inViewportPixelUnitsUnits ?
+        (translateAnchor === 'map' ? transform.angle : 0) :
+        (translateAnchor === 'viewport' ? -transform.angle : 0);
+
+    if (angle) {
+        const sinA = Math.sin(angle);
+        const cosA = Math.cos(angle);
+        translate = [
+            translate[0] * cosA - translate[1] * sinA,
+            translate[0] * sinA + translate[1] * cosA
+        ];
+    }
+
+    return [
+        inViewportPixelUnitsUnits ? translate[0] : pixelsToTileUnits(tile, translate[0], transform.zoom),
+        inViewportPixelUnitsUnits ? translate[1] : pixelsToTileUnits(tile, translate[1], transform.zoom)];
+}
+
+/**
+ * Returns the signed distance between a point and a plane.
+ * @param plane - The plane equation, in the form where the first three components are the normal and the fourth component is the plane's distance from origin along normal.
+ * @param point - The point whose distance from plane is retunred.
+ * @returns Signed distance of the point from the plane. Positive distances are in the half space where the plane normal points to, negative otherwise.
+ */
+export function pointPlaneSignedDistance(
+    plane: vec4 | [number, number, number, number],
+    point: vec3 | [number, number, number]
+): number {
+    return plane[0] * point[0] + plane[1] * point[1] + plane[2] * point[2] + plane[3];
+}
 
 /**
  * Solves a quadratic equation in the form ax^2 + bx + c = 0 and returns its roots in no particular order.
@@ -31,6 +78,35 @@ export function solveQuadratic(a: number, b: number, c: number): {
             t0: (-b + Math.sqrt(d)) * 0.5 / a,
             t1: (-b + Math.sqrt(d)) * 0.5 / a
         };
+    }
+}
+
+/**
+ * Returns the angle in radians between two 2D vectors.
+ * The angle is signed and describes how much the first vector would need to be be rotated clockwise
+ * (assuming X is right and Y is down) so that it points in the same direction as the second vector.
+ * @param vec1x - The X component of the first vector.
+ * @param vec1y - The Y component of the first vector.
+ * @param vec2x - The X component of the second vector.
+ * @param vec2y - The Y component of the second vector.
+ * @returns The signed angle between the two vectors, in range -PI..PI.
+ */
+export function angleToRotateBetweenVectors2D(vec1x: number, vec1y: number, vec2x: number, vec2y: number): number {
+    // Normalize both vectors
+    const length1 = Math.sqrt(vec1x * vec1x + vec1y * vec1y);
+    const length2 = Math.sqrt(vec2x * vec2x + vec2y * vec2y);
+    vec1x /= length1;
+    vec1y /= length1;
+    vec2x /= length2;
+    vec2y /= length2;
+    const dot = vec1x * vec2x + vec1y * vec2y;
+    const angle = Math.acos(dot);
+    // dot second vector with vector to the right of first (-vec1y, vec1x)
+    const isVec2RightOfVec1 = (-vec1y * vec2x + vec1x * vec2y) > 0;
+    if (isVec2RightOfVec1) {
+        return angle;
+    } else {
+        return -angle;
     }
 }
 

@@ -32,12 +32,13 @@ import type {CrossTileID, VariableOffset} from '../symbol/placement';
 import type {SymbolBucket, SymbolBuffers} from '../data/bucket/symbol_bucket';
 import type {TerrainData} from '../render/terrain';
 import type {SymbolLayerSpecification} from '@maplibre/maplibre-gl-style-spec';
-import type {ITransform} from '../geo/transform_interface';
+import type {IReadonlyTransform} from '../geo/transform_interface';
 import type {ColorMode} from '../gl/color_mode';
 import type {Program} from './program';
 import type {TextAnchor} from '../style/style_layer/variable_text_anchor';
 import {ProjectionData} from './program/projection_program';
 import {getGlCoordMatrix, getPerspectiveRatio, getPitchedLabelPlaneMatrix, hideGlyphs, projectWithMatrix, projectTileCoordinatesToClipSpace, projectTileCoordinatesToLabelPlane, SymbolProjectionContext, updateLineLabels} from '../symbol/projection';
+import {translatePosition} from '../util/util';
 
 type SymbolTileRenderState = {
     segments: SegmentVector;
@@ -153,7 +154,7 @@ function updateVariableAnchors(coords: Array<OverscaledTileID>,
         if (size) {
             const tileScale = Math.pow(2, transform.zoom - tile.tileID.overscaledZ);
             const getElevation = terrain ? (x: number, y: number) => terrain.getElevation(coord, x, y) : null;
-            const translation = transform.translatePosition(tile, translate, translateAnchor);
+            const translation = translatePosition(transform, tile, translate, translateAnchor);
             updateVariableAnchorsForBucket(bucket, rotateWithMap, pitchWithMap, variableOffsets,
                 transform, pitchedLabelPlaneMatrix, tileScale, size, updateTextFitIcon, translation, coord.toUnwrapped(), getElevation);
         }
@@ -192,7 +193,7 @@ function updateVariableAnchorsForBucket(
     rotateWithMap: boolean,
     pitchWithMap: boolean,
     variableOffsets: {[_ in CrossTileID]: VariableOffset},
-    transform: ITransform,
+    transform: IReadonlyTransform,
     pitchedLabelPlaneMatrix: mat4,
     tileScale: number,
     size: EvaluatedZoomSize,
@@ -377,7 +378,7 @@ function drawLayerSymbols(
         mat4.invert(pitchedLabelPlaneMatrixInverse, pitchedLabelPlaneMatrix);
         const glCoordMatrixForShader = getGlCoordMatrix(pitchWithMap, rotateWithMap, painter.transform, s);
 
-        const translation = transform.translatePosition(tile, translate, translateAnchor);
+        const translation = translatePosition(transform, tile, translate, translateAnchor);
         const projectionData = transform.getProjectionData(coord);
 
         const hasVariableAnchors = hasVariablePlacement && bucket.hasTextData();

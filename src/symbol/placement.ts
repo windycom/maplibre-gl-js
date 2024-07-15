@@ -8,7 +8,7 @@ import {getAnchorAlignment, WritingMode} from './shaping';
 import {mat4} from 'gl-matrix';
 import {pixelsToTileUnits} from '../source/pixels_to_tile_units';
 import Point from '@mapbox/point-geometry';
-import type {ITransform} from '../geo/transform_interface';
+import type {IReadonlyTransform, ITransform} from '../geo/transform_interface';
 import type {StyleLayer} from '../style/style_layer';
 import {PossiblyEvaluated} from '../style/properties';
 import type {SymbolLayoutProps, SymbolLayoutPropsPossiblyEvaluated} from '../style/style_layer/symbol_style_layer_properties.g';
@@ -21,7 +21,7 @@ import type {CollisionBoxArray, CollisionVertexArray, SymbolInstance, TextAnchor
 import type {FeatureIndex} from '../data/feature_index';
 import type {OverscaledTileID, UnwrappedTileID} from '../source/tile_id';
 import {Terrain} from '../render/terrain';
-import {warnOnce} from '../util/util';
+import {translatePosition, warnOnce} from '../util/util';
 import {TextAnchor, TextAnchorEnum} from '../style/style_layer/variable_text_anchor';
 
 class OpacityState {
@@ -177,7 +177,7 @@ export type BucketPart = {
 export type CrossTileID = string | number;
 
 export class Placement {
-    transform: ITransform;
+    transform: IReadonlyTransform;
     terrain: Terrain;
     collisionIndex: CollisionIndex;
     placements: {
@@ -261,12 +261,14 @@ export class Placement {
         const rotateWithMap = layout.get('text-rotation-alignment') === 'map';
         const pixelsToTiles = pixelsToTileUnits(tile, 1, this.transform.zoom);
 
-        const translationText = this.collisionIndex.transform.translatePosition(
+        const translationText = translatePosition(
+            this.collisionIndex.transform,
             tile,
             paint.get('text-translate'),
             paint.get('text-translate-anchor'),);
 
-        const translationIcon = this.collisionIndex.transform.translatePosition(
+        const translationIcon = translatePosition(
+            this.collisionIndex.transform,
             tile,
             paint.get('icon-translate'),
             paint.get('icon-translate-anchor'),);

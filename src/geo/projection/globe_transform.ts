@@ -1,9 +1,8 @@
 import {mat2, mat4, vec3, vec4} from 'gl-matrix';
 import {MAX_VALID_LATITUDE, TransformHelper, TransformUpdateResult} from '../transform_helper';
-import {Tile} from '../../source/tile';
 import {MercatorTransform} from './mercator_transform';
 import {LngLat, earthRadius} from '../lng_lat';
-import {clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, warnOnce} from '../../util/util';
+import {angleToRotateBetweenVectors2D, clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
 import {browser} from '../../util/browser';
@@ -13,11 +12,31 @@ import {ProjectionData} from '../../render/program/projection_program';
 import {MercatorCoordinate} from '../mercator_coordinate';
 import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
-import {ITransform} from '../transform_interface';
+import {IReadonlyTransform, ITransform} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
-import {translatePosition} from './mercator_utils';
+import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
 import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
-import {EXTENT} from '../../data/extent';
+
+/**
+ * Describes the intersection of ray and sphere.
+ * When null, no intersection occured.
+ * When both "t" values are the same, the ray just touched the sphere's surface.
+ * When both value are different, a full intersection occured.
+ */
+type RaySphereIntersection = {
+    /**
+     * The ray parameter for intersection that is "less" along the ray direction.
+     * Note that this value can be negative, meaning that this intersection occured before the ray's origin.
+     * The intersection point can be computed as `origin + direction * tMin`.
+     */
+    tMin: number;
+    /**
+     * The ray parameter for intersection that is "more" along the ray direction.
+     * Note that this value can be negative, meaning that this intersection occured before the ray's origin.
+     * The intersection point can be computed as `origin + direction * tMax`.
+     */
+    tMax: number;
+} | null;
 
 // These functions create **64** bit float vectors and matrices, unlike default gl-matrix functions.
 function createVec4(): vec4 { return new Float64Array(4) as any; }
@@ -27,50 +46,6 @@ function createIdentityMat4(): mat4 {
     const m = new Float64Array(16) as any;
     mat4.identity(m);
     return m;
-}
-
-/**
- * Returns mercator coordinates in range 0..1 for given coordinates inside a specified tile.
- * @param inTileX - X coordinate in tile units - range [0..EXTENT].
- * @param inTileY - Y coordinate in tile units - range [0..EXTENT].
- * @param canonicalTileID - Tile canonical ID - mercator X, Y and zoom.
- * @returns Mercator coordinates of the specified point in range [0..1].
- */
-function tileCoordinatesToMercatorCoordinates(inTileX: number, inTileY: number, canonicalTileID: CanonicalTileID): [number, number] {
-    const scale = 1.0 / (1 << canonicalTileID.z);
-    return [
-        inTileX / EXTENT * scale + canonicalTileID.x * scale,
-        inTileY / EXTENT * scale + canonicalTileID.y * scale
-    ];
-}
-
-/**
- * Returns the angle in radians between two 2D vectors.
- * The angle is signed and describes how much the first vector would need to be be rotated clockwise
- * (assuming X is right and Y is down) so that it points in the same direction as the second vector.
- * @param vec1x - The X component of the first vector.
- * @param vec1y - The Y component of the first vector.
- * @param vec2x - The X component of the second vector.
- * @param vec2y - The Y component of the second vector.
- * @returns The signed angle between the two vectors, in range -PI..PI.
- */
-function angleToRotateBetweenVectors2D(vec1x: number, vec1y: number, vec2x: number, vec2y: number): number {
-    // Normalize both vectors
-    const length1 = Math.sqrt(vec1x * vec1x + vec1y * vec1y);
-    const length2 = Math.sqrt(vec2x * vec2x + vec2y * vec2y);
-    vec1x /= length1;
-    vec1y /= length1;
-    vec2x /= length2;
-    vec2y /= length2;
-    const dot = vec1x * vec2x + vec1y * vec2y;
-    const angle = Math.acos(dot);
-    // dot second vector with vector to the right of first (-vec1y, vec1x)
-    const isVec2RightOfVec1 = (-vec1y * vec2x + vec1x * vec2y) > 0;
-    if (isVec2RightOfVec1) {
-        return angle;
-    } else {
-        return -angle;
-    }
 }
 
 export class GlobeTransform implements ITransform {
@@ -265,9 +240,12 @@ export class GlobeTransform implements ITransform {
      * to ensure the transform's state isn't unintentionally changed.
      */
     private _projectionInstance: GlobeProjection;
-    private _globeRendering: boolean = true;
     private _lastGlobeRenderingState: boolean = true;
     private _globeLatitudeErrorCorrectionRadians: number = 0;
+
+    private get _globeRendering(): boolean {
+        return this._globeness > 0;
+    }
 
     /**
      * Globe projection can smoothly interpolate between globe view and mercator. This variable controls this interpolation.
@@ -275,7 +253,6 @@ export class GlobeTransform implements ITransform {
      */
     private _globeness: number = 1.0;
     private _mercatorTransform: MercatorTransform;
-    private _initialized: boolean = false;
 
     private _nearZ;
     private _farZ;
@@ -289,7 +266,6 @@ export class GlobeTransform implements ITransform {
         this._globeness = globeProjectionEnabled ? 1 : 0; // When transform is cloned for use in symbols, `_updateAnimation` function which usually sets this value never gets called.
         this._projectionInstance = globeProjection;
         this._mercatorTransform = new MercatorTransform();
-        this._initialized = true;
     }
 
     clone(): ITransform {
@@ -299,7 +275,7 @@ export class GlobeTransform implements ITransform {
         return clone;
     }
 
-    public apply(that: ITransform): void {
+    public apply(that: IReadonlyTransform): void {
         this._helper.apply(that);
         this._mercatorTransform.apply(this);
     }
@@ -348,24 +324,19 @@ export class GlobeTransform implements ITransform {
      * @param animateTransition - Controls whether the transition between globe view and mercator (if triggered by this call) should be animated. True by default.
      */
     public setGlobeViewAllowed(allow: boolean, animateTransition: boolean = true) {
-        if (allow !== this._globeProjectionEnabled) {
-            if (!animateTransition) {
-                this._skipNextAnimation = true;
-            }
-            this._globeProjectionEnabled = allow;
-            this._lastGlobeChangeTime = browser.now();
+        if (allow === this._globeProjectionEnabled) {
+            return;
         }
-    }
 
-    translatePosition(tile: Tile, translate: [number, number], translateAnchor: 'map' | 'viewport'): [number, number] {
-        // In the future, some better translation for globe and other weird projections should be implemented here,
-        // especially for the translateAnchor==='viewport' case.
-        return translatePosition(this, tile, translate, translateAnchor);
+        if (!animateTransition) {
+            this._skipNextAnimation = true;
+        }
+        this._globeProjectionEnabled = allow;
+        this._lastGlobeChangeTime = browser.now();
     }
 
     /**
      * Should be called at the beginning of every frame to synchronize the transform with the underlying projection.
-     * May change the transform's state - do not call on cloned transforms that should behave immutably!
      */
     newFrameUpdate(): TransformUpdateResult {
         if (this._projectionInstance) {
@@ -377,9 +348,7 @@ export class GlobeTransform implements ITransform {
             this._globeLatitudeErrorCorrectionRadians = this._projectionInstance.latitudeErrorCorrectionRadians;
         }
 
-        if (this._initialized) {
-            this._updateAnimation();
-        }
+        this._globeness = this._computeGlobenessAnimation();
 
         this._calcMatrices();
 
@@ -393,7 +362,10 @@ export class GlobeTransform implements ITransform {
         };
     }
 
-    private _updateAnimation() {
+    /**
+     * Compute new globeness, if needed.
+     */
+    private _computeGlobenessAnimation(): number {
         // Update globe transition animation
         const globeState = this._globeProjectionEnabled;
         const currentTime = browser.now();
@@ -406,10 +378,10 @@ export class GlobeTransform implements ITransform {
 
         // Transition parameter, where 0 is the start and 1 is end.
         const globeTransition = Math.min(Math.max((currentTime - this._lastGlobeChangeTime) / 1000.0 / globeConstants.globeTransitionTimeSeconds, 0.0), 1.0);
-        this._globeness = globeState ? globeTransition : (1.0 - globeTransition);
+        let newGlobeness = globeState ? globeTransition : (1.0 - globeTransition);
 
         if (this._skipNextAnimation) {
-            this._globeness = globeState ? 1.0 : 0.0;
+            newGlobeness = globeState ? 1.0 : 0.0;
             this._lastGlobeChangeTime = currentTime - globeConstants.globeTransitionTimeSeconds * 1000.0 * 2.0;
             this._skipNextAnimation = false;
         }
@@ -422,16 +394,18 @@ export class GlobeTransform implements ITransform {
         }
         const zoomTransition = Math.min(Math.max((currentTime - this._lastLargeZoomStateChange) / 1000.0 / globeConstants.zoomTransitionTimeSeconds, 0.0), 1.0);
         const zoomGlobenessBound = currentZoomState ? (1.0 - zoomTransition) : zoomTransition;
-        this._globeness = Math.min(this._globeness, zoomGlobenessBound);
-        this._globeness = easeCubicInOut(this._globeness); // Smooth animation
+        newGlobeness = Math.min(newGlobeness, zoomGlobenessBound);
+        newGlobeness = easeCubicInOut(newGlobeness); // Smooth animation
 
-        if (oldGlobeness !== this._globeness) {
+        if (oldGlobeness !== newGlobeness) {
             this.setCenter(new LngLat(
-                this._mercatorTransform.center.lng + differenceOfAnglesDegrees(this._mercatorTransform.center.lng, this.center.lng) * this._globeness,
-                lerp(this._mercatorTransform.center.lat, this.center.lat, this._globeness)
+                this._mercatorTransform.center.lng + differenceOfAnglesDegrees(this._mercatorTransform.center.lng, this.center.lng) * newGlobeness,
+                lerp(this._mercatorTransform.center.lat, this.center.lat, newGlobeness)
             ));
-            this.setZoom(lerp(this._mercatorTransform.zoom, this.zoom, this._globeness));
+            this.setZoom(lerp(this._mercatorTransform.zoom, this.zoom, newGlobeness));
         }
+
+        return newGlobeness;
     }
 
     isRenderingDirty(): boolean {
@@ -617,12 +591,6 @@ export class GlobeTransform implements ITransform {
         if (!this._helper._width || !this._helper._height) {
             return;
         }
-
-        if (!this._initialized) {
-            return;
-        }
-
-        this._globeRendering = this._globeness > 0;
 
         if (this._mercatorTransform) {
             this._mercatorTransform.apply(this, true);
@@ -935,9 +903,9 @@ export class GlobeTransform implements ITransform {
         this.setZoom(this.zoom + getZoomAdjustment(oldLat, this.center.lat));
     }
 
-    locationPoint(lnglat: LngLat, terrain?: Terrain): Point {
+    locationToScreenPoint(lnglat: LngLat, terrain?: Terrain): Point {
         if (!this._globeRendering) {
-            return this._mercatorTransform.locationPoint(lnglat, terrain);
+            return this._mercatorTransform.locationToScreenPoint(lnglat, terrain);
         }
 
         const pos = angularCoordinatesToSurfaceVector(lnglat);
@@ -965,20 +933,20 @@ export class GlobeTransform implements ITransform {
         );
     }
 
-    pointCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
+    screenPointToMercatorCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
         if (!this._globeRendering || terrain) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
-            return this._mercatorTransform.pointCoordinate(p, terrain);
+            return this._mercatorTransform.screenPointToMercatorCoordinate(p, terrain);
         }
         return MercatorCoordinate.fromLngLat(this.unprojectScreenPoint(p));
     }
 
-    pointLocation(p: Point, terrain?: Terrain): LngLat {
+    screenPointToLocation(p: Point, terrain?: Terrain): LngLat {
         if (!this._globeRendering || terrain) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
-            return this._mercatorTransform.pointLocation(p, terrain);
+            return this._mercatorTransform.screenPointToLocation(p, terrain);
         }
         return this.unprojectScreenPoint(p);
     }
@@ -1052,15 +1020,15 @@ export class GlobeTransform implements ITransform {
     }
 
     /**
-     * Returns the two intersection points of the ray and the planet's sphere, or null if no intersection occurs.
-     * The intersections are encoded in the direction along the ray, with `tMin` being the first intersection and `tMax` being the second.
+     * Returns the two intersection points of the ray and the planet's sphere,
+     * or null if no intersection occurs.
+     * The intersections are encoded as the parameter for parametric ray equation,
+     * with `tMin` being the first intersection and `tMax` being the second.
+     * Eg. the nearer intersection point can then be computed as `origin + direction * tMin`.
      * @param origin - The ray origin.
      * @param direction - The normalized ray direction.
      */
-    private rayPlanetIntersection(origin: vec3, direction: vec3): {
-        tMin: number;
-        tMax: number;
-    } {
+    private rayPlanetIntersection(origin: vec3, direction: vec3): RaySphereIntersection {
         const originDotDirection = vec3.dot(origin, direction);
         const planetRadiusSquared = 1.0; // planet is a unit sphere, so its radius squared is 1
 
@@ -1074,21 +1042,21 @@ export class GlobeTransform implements ITransform {
         vec3.sub(inner, origin, scaledDir);
         const discriminant = planetRadiusSquared - vec3.dot(inner, inner);
 
-        if (discriminant >= 0) {
-            const c = vec3.dot(origin, origin) - planetRadiusSquared;
-            const q = -originDotDirection + (originDotDirection < 0 ? 1 : -1) * Math.sqrt(discriminant);
-            const t0 = c / q;
-            const t1 = q;
-            // Assume the ray origin is never inside the sphere
-            const tMin = Math.min(t0, t1);
-            const tMax = Math.max(t0, t1);
-            return {
-                tMin,
-                tMax
-            };
-        } else {
+        if (discriminant < 0) {
             return null;
         }
+
+        const c = vec3.dot(origin, origin) - planetRadiusSquared;
+        const q = -originDotDirection + (originDotDirection < 0 ? 1 : -1) * Math.sqrt(discriminant);
+        const t0 = c / q;
+        const t1 = q;
+        // Assume the ray origin is never inside the sphere
+        const tMin = Math.min(t0, t1);
+        const tMax = Math.max(t0, t1);
+        return {
+            tMin,
+            tMax
+        };
     }
 
     /**
@@ -1108,6 +1076,7 @@ export class GlobeTransform implements ITransform {
         const intersection = this.rayPlanetIntersection(rayOrigin, rayDirection);
 
         if (intersection) {
+            // Ray intersects the sphere -> compute intersection LngLat.
             // Assume the ray origin is never inside the sphere - just use tMin
             const intersectionPoint = createVec3();
             vec3.add(intersectionPoint, rayOrigin, [
@@ -1118,43 +1087,43 @@ export class GlobeTransform implements ITransform {
             const sphereSurface = createVec3();
             vec3.normalize(sphereSurface, intersectionPoint);
             return sphereSurfacePointToCoordinates(sphereSurface);
-        } else {
-            // Ray does not intersect the sphere -> find the closest point on the horizon to the ray.
-            // Intersect the ray with the clipping plane, since we know that the intersection of the clipping plane and the sphere is the horizon.
-            const originDotPlaneXyz = this._cachedClippingPlane[0] * rayOrigin[0] + this._cachedClippingPlane[1] * rayOrigin[1] + this._cachedClippingPlane[2] * rayOrigin[2];
-            const directionDotPlaneXyz = this._cachedClippingPlane[0] * rayDirection[0] + this._cachedClippingPlane[1] * rayDirection[1] + this._cachedClippingPlane[2] * rayDirection[2];
-            const tPlane = -(originDotPlaneXyz + this._cachedClippingPlane[3]) / directionDotPlaneXyz;
-
-            const maxRayLength = 2.0; // One globe diameter
-            const planeIntersection = createVec3();
-
-            if (tPlane > 0) {
-                vec3.add(planeIntersection, rayOrigin, [
-                    rayDirection[0] * tPlane,
-                    rayDirection[1] * tPlane,
-                    rayDirection[2] * tPlane
-                ]);
-            } else {
-                // When the ray takes too long to hit the plane (>maxRayLength), or if the plane intersection is behind the camera, handle things differently.
-                // Take a point along the ray at distance maxRayLength, project it to clipping plane, then continue as normal to find the horizon point.
-                const distantPoint = createVec3();
-                vec3.add(distantPoint, rayOrigin, [
-                    rayDirection[0] * maxRayLength,
-                    rayDirection[1] * maxRayLength,
-                    rayDirection[2] * maxRayLength
-                ]);
-                const distanceFromPlane = distantPoint[0] * this._cachedClippingPlane[0] + distantPoint[1] * this._cachedClippingPlane[1] + distantPoint[2] * this._cachedClippingPlane[2] + this._cachedClippingPlane[3];
-                vec3.sub(planeIntersection, distantPoint, [
-                    this._cachedClippingPlane[0] * distanceFromPlane,
-                    this._cachedClippingPlane[1] * distanceFromPlane,
-                    this._cachedClippingPlane[2] * distanceFromPlane
-                ]);
-            }
-
-            const closestOnHorizon = createVec3();
-            vec3.normalize(closestOnHorizon, planeIntersection);
-            return sphereSurfacePointToCoordinates(closestOnHorizon);
         }
+
+        // Ray does not intersect the sphere -> find the closest point on the horizon to the ray.
+        // Intersect the ray with the clipping plane, since we know that the intersection of the clipping plane and the sphere is the horizon.
+        const directionDotPlaneXyz = this._cachedClippingPlane[0] * rayDirection[0] + this._cachedClippingPlane[1] * rayDirection[1] + this._cachedClippingPlane[2] * rayDirection[2];
+        const originToPlaneDistance = pointPlaneSignedDistance(this._cachedClippingPlane, rayOrigin);
+        const distanceToIntersection = -originToPlaneDistance / directionDotPlaneXyz;
+
+        const maxRayLength = 2.0; // One globe diameter
+        const planeIntersection = createVec3();
+
+        if (distanceToIntersection > 0) {
+            vec3.add(planeIntersection, rayOrigin, [
+                rayDirection[0] * distanceToIntersection,
+                rayDirection[1] * distanceToIntersection,
+                rayDirection[2] * distanceToIntersection
+            ]);
+        } else {
+            // When the ray takes too long to hit the plane (>maxRayLength), or if the plane intersection is behind the camera, handle things differently.
+            // Take a point along the ray at distance maxRayLength, project it to clipping plane, then continue as normal to find the horizon point.
+            const distantPoint = createVec3();
+            vec3.add(distantPoint, rayOrigin, [
+                rayDirection[0] * maxRayLength,
+                rayDirection[1] * maxRayLength,
+                rayDirection[2] * maxRayLength
+            ]);
+            const distanceFromPlane = pointPlaneSignedDistance(this._cachedClippingPlane, distantPoint);
+            vec3.sub(planeIntersection, distantPoint, [
+                this._cachedClippingPlane[0] * distanceFromPlane,
+                this._cachedClippingPlane[1] * distanceFromPlane,
+                this._cachedClippingPlane[2] * distanceFromPlane
+            ]);
+        }
+
+        const closestOnHorizon = createVec3();
+        vec3.normalize(closestOnHorizon, planeIntersection);
+        return sphereSurfacePointToCoordinates(closestOnHorizon);
     }
 
     getCustomLayerArgs() {

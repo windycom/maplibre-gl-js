@@ -1,7 +1,7 @@
 import {Tile} from './tile';
 import {OverscaledTileID} from './tile_id';
 import {GeoJSONSource, GeoJSONSourceOptions} from './geojson_source';
-import {ITransform} from '../geo/transform_interface';
+import {IReadonlyTransform} from '../geo/transform_interface';
 import {LngLat} from '../geo/lng_lat';
 import {extend} from '../util/util';
 import {Dispatcher} from '../util/dispatcher';
@@ -191,7 +191,7 @@ describe('GeoJSONSource#update', () => {
     const transform = new MercatorTransform();
     transform.resize(200, 200);
     const lngLat = LngLat.convert([-122.486052, 37.830348]);
-    const point = transform.locationPoint(lngLat);
+    const point = transform.locationToScreenPoint(lngLat);
     transform.setZoom(15);
     transform.setLocationAtPoint(lngLat, point);
 
@@ -390,7 +390,7 @@ describe('GeoJSONSource#update', () => {
 
         const source = new GeoJSONSource('id', {data: {}} as GeoJSONSourceOptions, mockDispatcher, undefined);
         source.map = {
-            transform: {} as ITransform,
+            transform: {} as IReadonlyTransform,
             getPixelRatio() { return 1; },
             style: {
                 projection: {
