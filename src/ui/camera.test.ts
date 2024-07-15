@@ -39,7 +39,12 @@ function attachSimulateFrame(camera) {
 function createCamera(options?) {
     options = options || {};
 
-    const transform = new MercatorTransform(0, 20, 0, 60, options.renderWorldCopies);
+    const transform = options.globe ? new GlobeTransform({} as any, true) : new MercatorTransform();
+    transform.setMinZoom(0);
+    transform.setMaxZoom(20);
+    transform.setMinPitch(0);
+    transform.setMaxPitch(60);
+    transform.setRenderWorldCopies(options.renderWorldCopies);
     transform.resize(512, 512);
 
     const camera = attachSimulateFrame(new CameraMock(transform, {} as any))

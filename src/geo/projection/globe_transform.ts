@@ -16,6 +16,7 @@ import {IReadonlyTransform, ITransform} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
 import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
 import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
+import {EXTENT} from '../../data/extent';
 
 /**
  * Describes the intersection of ray and sphere.
@@ -502,9 +503,9 @@ export class GlobeTransform implements ITransform {
         return sphere;
     }
 
-    public isOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
+    public isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
         if (!this._globeRendering) {
-            return this._mercatorTransform.isOccluded(x, y, unwrappedTileID);
+            return this._mercatorTransform.isTilePositionOccluded(x, y, unwrappedTileID);
         }
         const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID);
         return !this.isSurfacePointVisible(spherePos);

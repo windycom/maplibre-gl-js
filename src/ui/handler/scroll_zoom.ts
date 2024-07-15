@@ -236,7 +236,7 @@ export class ScrollZoomHandler implements Handler {
 
         // Whether aroundPoint is actually unprojectable is not a problem to be solved here, but in handler_manager.ts instead.
         if (this._aroundCenter) {
-            this._aroundPoint = tr.transform.locationPoint(LngLat.convert(tr.center));
+            this._aroundPoint = tr.transform.locationToScreenPoint(LngLat.convert(tr.center));
         } else {
             this._aroundPoint = pos;
         }

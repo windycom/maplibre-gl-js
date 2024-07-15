@@ -412,7 +412,14 @@ export interface IReadonlyTransform extends ITransformGetters {
      * @param y - Tile space coordinate in range 0..EXTENT.
      * @param unwrappedTileID - TileID of the tile the supplied coordinates belong to.
      */
-    isOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean;
+    isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean;
+
+    /**
+     * @internal
+     * Returns whether the supplied location is occluded in this projection.
+     * For example during globe rendering a location on the backfacing side of the globe is occluded.
+     */
+    isLocationOccluded(lngLat: LngLat): boolean;
 
     /**
      * @internal
@@ -450,6 +457,11 @@ export interface IReadonlyTransform extends ITransformGetters {
      * Projects a point in tile coordinates to clip space. Used in symbol rendering.
      */
     projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection;
+
+    /**
+     * Returns an object with projection-specific arguments to be passed to custom layers.
+     */
+    getCustomLayerArgs(): any;
 }
 
 /**
