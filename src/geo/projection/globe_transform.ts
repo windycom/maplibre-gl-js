@@ -1,4 +1,4 @@
-import {mat2, mat4, vec3, vec4} from 'gl-matrix';
+import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
 import {MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
 import {MercatorTransform} from './mercator_transform';
 import {LngLat, earthRadius} from '../lng_lat';
@@ -14,8 +14,8 @@ import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {CoveringTilesOptions, CoveringZoomOptions, IReadonlyTransform, ITransform, TransformUpdateResult} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
-import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
-import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
+import {tileCoordinatesToLocation, tileCoordinatesToMercatorCoordinates} from './mercator_utils';
+import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, clampLngLat, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
 import {EXTENT} from '../../data/extent';
 
 /**
@@ -528,8 +528,8 @@ export class GlobeTransform implements ITransform {
         return [...planeVector, -tangentPlaneDistanceToC * scale];
     }
 
-    private _projectTileCoordinatesToSphere(inTileX: number, inTileY: number, tileID: UnwrappedTileID): vec3 {
-        const mercator = tileCoordinatesToMercatorCoordinates(inTileX, inTileY, tileID.canonical);
+    private _projectTileCoordinatesToSphere(inTileX: number, inTileY: number, tileID: {x: number; y: number; z: number}): vec3 {
+        const mercator = tileCoordinatesToMercatorCoordinates(inTileX, inTileY, tileID);
         const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
         const sphere = angularCoordinatesRadiansToVector(angular[0], angular[1]);
         return sphere;
@@ -593,7 +593,7 @@ export class GlobeTransform implements ITransform {
             return this._mercatorTransform.projectTileCoordinates(x, y, unwrappedTileID, getElevation);
         }
 
-        const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID);
+        const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID.canonical);
         const elevation = getElevation ? getElevation(x, y) : 0.0;
         const vectorMultiplier = 1.0 + elevation / earthRadius;
         const pos: vec4 = [spherePos[0] * vectorMultiplier, spherePos[1] * vectorMultiplier, spherePos[2] * vectorMultiplier, 1];
@@ -687,9 +687,165 @@ export class GlobeTransform implements ITransform {
         return [new UnwrappedTileID(0, tileID)];
     }
 
+    /**
+     * A simple/heuristic function that returns whether the tile is visible under the current transform.
+     * @param x - Tile X.
+     * @param y - tile Y.
+     * @param z - Tile zoom.
+     * @returns 0 is not visible, 1 if partially visible, 2 if fully visible.
+     */
+    private isTileVisible(x: number, y: number, z: number): number {
+        const notVisible = 0;
+        const partiallyVisible = 1;
+        const fullyVisible = 2;
+
+        // Heuristics we use here won't work for tiles that span more than 90°,
+        // so we just return all tiles larger than that as partially visible.
+        if (z < 2) {
+            return partiallyVisible;
+        }
+
+        const tileID = {x, y, z};
+
+        const planeDirectionCoords = sphereSurfacePointToCoordinates([this._cachedClippingPlane[0], this._cachedClippingPlane[1], this._cachedClippingPlane[2]]);
+        const tileMinCoords = tileCoordinatesToLocation(0, EXTENT, tileID);
+        const tileMaxCoords = tileCoordinatesToLocation(EXTENT, 0, tileID);
+        const mostAboveHorizonCoords = clampLngLat(planeDirectionCoords, tileMinCoords, tileMaxCoords);
+        const mostAboveHorizonVec = angularCoordinatesToSurfaceVector(mostAboveHorizonCoords);
+        const largestDistFromPlane = pointPlaneSignedDistance(this._cachedClippingPlane, mostAboveHorizonVec);
+
+        if (largestDistFromPlane < 0) {
+            return notVisible;
+        }
+
+        const closestToCameraCoords = clampLngLat(this.center, tileMinCoords, tileMaxCoords);
+        const closestToCameraVec = angularCoordinatesToSurfaceVector(closestToCameraCoords);
+
+        const projectedClosest = createVec4();
+        projectedClosest[0] = closestToCameraVec[0];
+        projectedClosest[1] = closestToCameraVec[1];
+        projectedClosest[2] = closestToCameraVec[2];
+        projectedClosest[3] = 1;
+        vec4.transformMat4(projectedClosest, projectedClosest, this._globeViewProjMatrixNoCorrection);
+        projectedClosest[0] /= projectedClosest[3];
+        projectedClosest[1] /= projectedClosest[3];
+        projectedClosest[2] /= projectedClosest[3];
+
+        if (projectedClosest[0] < -1 || projectedClosest[0] > 1 || projectedClosest[1] < -1 || projectedClosest[1] > 1 || projectedClosest[2] < -1 || projectedClosest[2] > 1) {
+            return notVisible;
+        }
+
+        const corners = [
+            this._projectTileCoordinatesToSphere(0, 0, tileID),
+            this._projectTileCoordinatesToSphere(EXTENT, 0, tileID),
+            this._projectTileCoordinatesToSphere(EXTENT, EXTENT, tileID),
+            this._projectTileCoordinatesToSphere(0, EXTENT, tileID),
+        ];
+
+        // Project all corner points, see whether they can be visible.
+        const projected = corners.map(x => {
+            const pos: vec4 = [x[0], x[1], x[2], 1];
+            vec4.transformMat4(pos, pos, this._globeViewProjMatrixNoCorrection);
+            pos[0] /= pos[3];
+            pos[1] /= pos[3];
+            pos[2] /= pos[3];
+            return pos;
+        });
+
+        // Get clip space AABB of projected corner points
+        const min = [2, 2, 2];
+        const max = [-2, -2, -2];
+
+        for (const p of projected) {
+            for (let i = 0; i < 3; i++) {
+                min[i] = Math.min(min[i], p[i]);
+                max[i] = Math.max(max[i], p[i]);
+            }
+        }
+
+        // if (max[0] < -1 || min[0] > 1 || max[1] < -1 || min[1] > 1 || max[2] < -1 || min[2] > 1) {
+        //     return notVisible;
+        // }
+
+        if (min[0] >= -1 && max[0] <= 1 && min[1] >= -1 && max[1] <= 1 && min[2] >= -1 && max[2] <= 1) {
+            return fullyVisible;
+        }
+
+        return partiallyVisible;
+    }
+
     coveringTiles(options: CoveringTilesOptions): OverscaledTileID[] {
-        // Globe: TODO: implement for globe #3887
-        return this._mercatorTransform.coveringTiles(options);
+        if (!this._globeRendering) {
+            return this._mercatorTransform.coveringTiles(options);
+        }
+
+        let z = this.coveringZoomLevel(options);
+        const actualZ = z;
+
+        if (options.minzoom !== undefined && z < options.minzoom) {
+            return [];
+        }
+        if (options.maxzoom !== undefined && z > options.maxzoom) {
+            z = options.maxzoom;
+        }
+
+        const cameraCoord = this.screenPointToMercatorCoordinate(this.getCameraPoint());
+        const centerCoord = MercatorCoordinate.fromLngLat(this.center);
+        const numTiles = Math.pow(2, z);
+        const cameraPoint = [numTiles * cameraCoord.x, numTiles * cameraCoord.y, 0];
+        const centerPoint = [numTiles * centerCoord.x, numTiles * centerCoord.y, 0];
+
+        // Do a depth-first traversal to find visible tiles and proper levels of detail
+        const stack: Array<{x: number; y: number; zoom: number; fullyVisible: boolean}> = [];
+        const result = [];
+        const maxZoom = z;
+        const overscaledZ = options.reparseOverscaled ? actualZ : z;
+        stack.push({
+            zoom: 0,
+            x: 0,
+            y: 0,
+            fullyVisible: false
+        });
+
+        while (stack.length > 0) {
+            const it = stack.pop();
+            const x = it.x;
+            const y = it.y;
+            let fullyVisible = it.fullyVisible;
+
+            // Visibility of a tile is not required if any of its ancestor if fully inside the frustum
+            if (!fullyVisible) {
+                const intersectResult = this.isTileVisible(it.x, it.y, it.zoom);
+
+                if (intersectResult === 0)
+                    continue;
+
+                fullyVisible = intersectResult === 2;
+            }
+
+            // Have we reached the target depth or is the tile too far away to be any split further?
+            if (it.zoom === maxZoom) {
+                const dz = maxZoom - it.zoom;
+                const dx = cameraPoint[0] - 0.5 - (x << dz);
+                const dy = cameraPoint[1] - 0.5 - (y << dz);
+                result.push({
+                    tileID: new OverscaledTileID(it.zoom === maxZoom ? overscaledZ : it.zoom, 0, it.zoom, x, y),
+                    distanceSq: vec2.sqrLen([centerPoint[0] - 0.5 - x, centerPoint[1] - 0.5 - y]),
+                    // this variable is currently not used, but may be important to reduce the amount of loaded tiles
+                    tileDistanceToCamera: Math.sqrt(dx * dx + dy * dy)
+                });
+                continue;
+            }
+
+            for (let i = 0; i < 4; i++) {
+                const childX = (x << 1) + (i % 2);
+                const childY = (y << 1) + (i >> 1);
+                const childZ = it.zoom + 1;
+                stack.push({zoom: childZ, x: childX, y: childY, fullyVisible});
+            }
+        }
+
+        return result.sort((a, b) => a.distanceSq - b.distanceSq).map(a => a.tileID);
     }
 
     recalculateZoom(terrain: Terrain): void {
