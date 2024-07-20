@@ -222,7 +222,18 @@ export class GlobeTransform implements ITransform {
 
     private _lastLargeZoomStateChange: number = -1000.0;
     private _lastLargeZoomState: boolean = false;
-    private _lastUpdateTime = -1e9;
+
+    /**
+     * Stores when {@link newFrameUpdate} was last called.
+     * Serves as a unified clock for globe (instead of each function using a slightly different value from `browser.now()`).
+     */
+    private _lastUpdateTime = browser.now();
+    /**
+     * Stores when switch from globe to mercator or back last occurred, for animation purposes.
+     * This switch can be caused either by the map passing the threshold zoom level,
+     * or by {@link setGlobeViewAllowed} being called.
+     */
+    private _lastGlobeChangeTime: number = browser.now() - 10_000; // Ten seconds before transform creation
 
     private _skipNextAnimation: boolean = true;
 
@@ -234,8 +245,13 @@ export class GlobeTransform implements ITransform {
 
     private _cameraPosition: vec3 = createVec3();
 
-    private _lastGlobeChangeTime: number = -1000.0;
-    private _globeProjectionEnabled = true;
+    /**
+     * Whether globe projection is allowed to be used.
+     * Set with {@link setGlobeViewAllowed}.
+     * Can be used to dynamically disable globe projection without changing the map's projection,
+     * which would cause a map reload.
+     */
+    private _globeProjectionAllowed = true;
 
     /**
      * Note: projection instance should only be accessed in the {@link newFrameUpdate} function
@@ -263,17 +279,16 @@ export class GlobeTransform implements ITransform {
             calcMatrices: () => { this._calcMatrices(); },
             getConstrained: (center, zoom) => { return this.getConstrained(center, zoom); }
         });
-        this._globeProjectionEnabled = globeProjectionEnabled;
+        this._globeProjectionAllowed = globeProjectionEnabled;
         this._globeness = globeProjectionEnabled ? 1 : 0; // When transform is cloned for use in symbols, `_updateAnimation` function which usually sets this value never gets called.
         this._projectionInstance = globeProjection;
         this._mercatorTransform = new MercatorTransform();
     }
 
     clone(): ITransform {
-        const clone = new GlobeTransform(null, this._globeProjectionEnabled);
+        const clone = new GlobeTransform(null, this._globeProjectionAllowed);
         clone._applyGlobeTransform(this);
         clone.apply(this);
-        clone._updateErrorCorrectionValue();
         return clone;
     }
 
@@ -284,6 +299,7 @@ export class GlobeTransform implements ITransform {
 
     private _applyGlobeTransform(that: GlobeTransform): void {
         this._globeness = that._globeness;
+        this._globeLatitudeErrorCorrectionRadians = that._globeLatitudeErrorCorrectionRadians;
     }
 
     public get projectionMatrix(): mat4 { return this._globeRendering ? this._projectionMatrix : this._mercatorTransform.projectionMatrix; }
@@ -319,25 +335,26 @@ export class GlobeTransform implements ITransform {
      * Set with {@link setGlobeViewAllowed}.
      */
     public getGlobeViewAllowed(): boolean {
-        return this._globeProjectionEnabled;
+        return this._globeProjectionAllowed;
     }
 
     /**
      * Sets whether globe view is allowed. When allowed, globe fill function as normal, displaying a 3D planet,
      * but transitioning to mercator at high zoom levels.
      * Otherwise, mercator will be used at all zoom levels instead.
+     * When globe is caused to transition to mercator by this function, the transition will be animated.
      * @param allow - Sets whether glove view is allowed.
      * @param animateTransition - Controls whether the transition between globe view and mercator (if triggered by this call) should be animated. True by default.
      */
     public setGlobeViewAllowed(allow: boolean, animateTransition: boolean = true) {
-        if (allow === this._globeProjectionEnabled) {
+        if (allow === this._globeProjectionAllowed) {
             return;
         }
 
         if (!animateTransition) {
             this._skipNextAnimation = true;
         }
-        this._globeProjectionEnabled = allow;
+        this._globeProjectionAllowed = allow;
         this._lastGlobeChangeTime = this._lastUpdateTime;
     }
 
@@ -353,24 +370,27 @@ export class GlobeTransform implements ITransform {
 
         this._calcMatrices();
 
-        const result: TransformUpdateResult = {
-            forcePlacementUpdate: false,
-            fireProjectionEvent: false,
-        };
-        if (oldGlobeRendering !== this._globeRendering) {
-            result.forcePlacementUpdate = true;
-            result.fireProjectionEvent = true;
+        if (oldGlobeRendering === this._globeRendering) {
+            return {
+                forcePlacementUpdate: false,
+                fireProjectionEvent: false,
+            };
+        } else {
+            return {
+                forcePlacementUpdate: true,
+                fireProjectionEvent: true,
+            };
         }
-        return result;
     }
 
+    /**
+     * This function should never be called on a cloned transform, thus ensuring that
+     * the state of a cloned transform is never changed after creation.
+     */
     private _updateErrorCorrectionValue(): void {
         if (!this._projectionInstance) {
             return;
         }
-        // Note: the _globeRendering field is only updated inside this function.
-        // This function should never be called on a cloned transform, thus ensuring that
-        // the state of a cloned transform is never changed after creation.
         this._projectionInstance.useGlobeRendering = this._globeRendering;
         this._projectionInstance.errorQueryLatitudeDegrees = this.center.lat;
         this._globeLatitudeErrorCorrectionRadians = this._projectionInstance.latitudeErrorCorrectionRadians;
@@ -381,7 +401,7 @@ export class GlobeTransform implements ITransform {
      */
     private _computeGlobenessAnimation(): number {
         // Update globe transition animation
-        const globeState = this._globeProjectionEnabled;
+        const globeState = this._globeProjectionAllowed;
         const currentTime = this._lastUpdateTime;
         if (globeState !== this._lastGlobeStateEnabled) {
             this._lastGlobeChangeTime = currentTime;
@@ -510,17 +530,9 @@ export class GlobeTransform implements ITransform {
 
     private _projectTileCoordinatesToSphere(inTileX: number, inTileY: number, tileID: UnwrappedTileID): vec3 {
         const mercator = tileCoordinatesToMercatorCoordinates(inTileX, inTileY, tileID.canonical);
-        const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator[0], mercator[1]);
+        const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
         const sphere = angularCoordinatesRadiansToVector(angular[0], angular[1]);
         return sphere;
-    }
-
-    public isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean {
-        if (!this._globeRendering) {
-            return this._mercatorTransform.isTilePositionOccluded(x, y, unwrappedTileID);
-        }
-        const spherePos = this._projectTileCoordinatesToSphere(x, y, unwrappedTileID);
-        return !this.isSurfacePointVisible(spherePos);
     }
 
     public isLocationOccluded(location: LngLat): boolean {
@@ -572,7 +584,7 @@ export class GlobeTransform implements ITransform {
             return 1.0;
         }
         const mercator = tileCoordinatesToMercatorCoordinates(textAnchor.x, textAnchor.y, tileID.canonical);
-        const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator[0], mercator[1]);
+        const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
         return this.getCircleRadiusCorrection() / Math.cos(angular[1]);
     }
 

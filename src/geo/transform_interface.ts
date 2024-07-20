@@ -36,7 +36,13 @@ export type CoveringTilesOptions = CoveringZoomOptions & {
      * its zoom set to the overscaled greater zoom. When false, such tiles will have zoom set to `maxzoom`.
      */
     reparseOverscaled?: boolean;
+    /**
+     * Whether to render multiple copies of the world for non globe projection maps.
+     */
     renderWorldCopies?: boolean;
+    /**
+     * When terrain is present, tile visibility will be computed in regards to the min and max elevations for each tile.
+     */
     terrain?: Terrain;
 };
 
@@ -418,16 +424,6 @@ export interface IReadonlyTransform extends ITransformGetters {
      * @param aligned - Set to true if a pixel-aligned matrix should be used, if possible (mostly used for raster tiles under mercator projection).
      */
     getProjectionData(overscaledTileID: OverscaledTileID, aligned?: boolean, ignoreTerrainMatrix?: boolean): ProjectionData;
-
-    /**
-     * @internal
-     * Returns whether the supplied location is occluded in this projection.
-     * For example during globe rendering a location on the backfacing side of the globe is occluded.
-     * @param x - Tile space coordinate in range 0..EXTENT.
-     * @param y - Tile space coordinate in range 0..EXTENT.
-     * @param unwrappedTileID - TileID of the tile the supplied coordinates belong to.
-     */
-    isTilePositionOccluded(x: number, y: number, unwrappedTileID: UnwrappedTileID): boolean;
 
     /**
      * @internal
