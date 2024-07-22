@@ -741,6 +741,14 @@ export class GlobeTransform implements ITransform {
         }
     }
 
+    private distanceToTile(pointX: number, pointY: number, tileCornerX: number, tileCornerY: number): number {
+        const tileCornerToCenterX = pointX - tileCornerX;
+        const tileCornerToCenterY = pointY - tileCornerY;
+        const distanceX = (tileCornerToCenterX < 0) ? -tileCornerToCenterX : Math.max(0, tileCornerToCenterX - 1);
+        const distanceY = (tileCornerToCenterY < 0) ? -tileCornerToCenterY : Math.max(0, tileCornerToCenterY - 1);
+        return Math.max(distanceX, distanceY);
+    }
+
     /**
      * A simple/heuristic function that returns whether the tile is visible under the current transform.
      * @param x - Tile X.
@@ -796,9 +804,20 @@ export class GlobeTransform implements ITransform {
         const cameraPoint = [numTiles * cameraCoord.x, numTiles * cameraCoord.y, 0];
         const centerPoint = [numTiles * centerCoord.x, numTiles * centerCoord.y, 0];
 
+        const radiusOfMaxLvlLodInTiles = 1;
+
         // Do a depth-first traversal to find visible tiles and proper levels of detail
-        const stack: Array<{x: number; y: number; zoom: number; fullyVisible: boolean}> = [];
-        const result = [];
+        const stack: Array<{
+            x: number;
+            y: number;
+            zoom: number;
+            fullyVisible: boolean;
+        }> = [];
+        const result: Array<{
+            tileID: OverscaledTileID;
+            distanceSq: number;
+            tileDistanceToCamera: number;
+        }> = [];
         const maxZoom = z;
         const overscaledZ = options.reparseOverscaled ? actualZ : z;
         stack.push({
@@ -814,7 +833,7 @@ export class GlobeTransform implements ITransform {
             const y = it.y;
             let fullyVisible = it.fullyVisible;
 
-            // Visibility of a tile is not required if any of its ancestor if fully inside the frustum
+            // Visibility of a tile is not required if any of its ancestor if fully visible
             if (!fullyVisible) {
                 const intersectResult = this.isTileVisible(it.x, it.y, it.zoom, cameraFrustum);
 
@@ -824,14 +843,30 @@ export class GlobeTransform implements ITransform {
                 fullyVisible = intersectResult === 2;
             }
 
+            // Determine whether the tile needs any further splitting.
+            // At each level, we want at least `radiusOfMaxLvlLodInTiles` tiles loaded in each axis from the map center point.
+            // For radiusOfMaxLvlLodInTiles=1, this would result in something like this:
+            // z=4 |--------------||--------------||--------------|
+            // z=5         |------||------||------|
+            // z=6             |--||--||--|
+            //                       ^map center
+            // ...where "|--|" symbolizes a tile viewed sideways.
+            // This logic might be slightly different from what mercator_transform.ts does.
+            const scale = 1 << (Math.max(it.zoom, 0));
+            const scaledCenter = [centerCoord.x * scale, centerCoord.y * scale];
+            const scaledCamera = [cameraCoord.x * scale, cameraCoord.y * scale];
+            const centerDist = this.distanceToTile(scaledCenter[0], scaledCenter[1], x, y);
+            const cameraDist = this.distanceToTile(scaledCamera[0], scaledCamera[1], x, y);
+            const split = Math.min(centerDist, cameraDist) <= radiusOfMaxLvlLodInTiles;
+
             // Have we reached the target depth or is the tile too far away to be any split further?
-            if (it.zoom === maxZoom) {
+            if (it.zoom === maxZoom || !split) {
                 const dz = maxZoom - it.zoom;
                 const dx = cameraPoint[0] - 0.5 - (x << dz);
                 const dy = cameraPoint[1] - 0.5 - (y << dz);
                 result.push({
                     tileID: new OverscaledTileID(it.zoom === maxZoom ? overscaledZ : it.zoom, 0, it.zoom, x, y),
-                    distanceSq: vec2.sqrLen([centerPoint[0] - 0.5 - x, centerPoint[1] - 0.5 - y]),
+                    distanceSq: vec2.sqrLen([centerPoint[0] - 0.5 - dx, centerPoint[1] - 0.5 - dy]),
                     // this variable is currently not used, but may be important to reduce the amount of loaded tiles
                     tileDistanceToCamera: Math.sqrt(dx * dx + dy * dy)
                 });
