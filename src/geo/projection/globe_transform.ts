@@ -688,6 +688,10 @@ export class GlobeTransform implements ITransform {
         return [new UnwrappedTileID(0, tileID)];
     }
 
+    /**
+     * Returns the AABB of the specified tile. The AABB is in the coordinate space where the globe is a unit sphere.
+     * @param tileID - Tile x, y and z for zoom.
+     */
     private getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
         if (tileID.z <= 0) {
             return new Aabb(
@@ -741,6 +745,9 @@ export class GlobeTransform implements ITransform {
         }
     }
 
+    /**
+     * Returns the Manhattan distance of a point to a square tile of size 1. If the point is inside the tile, returns 0.
+     */
     private distanceToTile(pointX: number, pointY: number, tileCornerX: number, tileCornerY: number): number {
         const tileCornerToCenterX = pointX - tileCornerX;
         const tileCornerToCenterY = pointY - tileCornerY;
@@ -804,7 +811,7 @@ export class GlobeTransform implements ITransform {
         const cameraPoint = [numTiles * cameraCoord.x, numTiles * cameraCoord.y, 0];
         const centerPoint = [numTiles * centerCoord.x, numTiles * centerCoord.y, 0];
 
-        const radiusOfMaxLvlLodInTiles = 1;
+        const radiusOfMaxLvlLodInTiles = 3;
 
         // Do a depth-first traversal to find visible tiles and proper levels of detail
         const stack: Array<{
@@ -851,13 +858,13 @@ export class GlobeTransform implements ITransform {
             // z=6             |--||--||--|
             //                       ^map center
             // ...where "|--|" symbolizes a tile viewed sideways.
-            // This logic might be slightly different from what mercator_transform.ts does.
+            // This logic might be slightly different from what mercator_transform.ts does, but should result in very similar (if not the same) set of tiles being loaded.
             const scale = 1 << (Math.max(it.zoom, 0));
             const scaledCenter = [centerCoord.x * scale, centerCoord.y * scale];
             const scaledCamera = [cameraCoord.x * scale, cameraCoord.y * scale];
             const centerDist = this.distanceToTile(scaledCenter[0], scaledCenter[1], x, y);
             const cameraDist = this.distanceToTile(scaledCamera[0], scaledCamera[1], x, y);
-            const split = Math.min(centerDist, cameraDist) <= radiusOfMaxLvlLodInTiles;
+            const split = Math.min(centerDist, cameraDist) * 2 <= radiusOfMaxLvlLodInTiles; // Multiply distance by 2, because the subdivided tiles would be half the size
 
             // Have we reached the target depth or is the tile too far away to be any split further?
             if (it.zoom === maxZoom || !split) {
