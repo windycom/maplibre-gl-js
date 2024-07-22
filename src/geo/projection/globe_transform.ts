@@ -2,7 +2,7 @@ import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
 import {MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
 import {MercatorTransform} from './mercator_transform';
 import {LngLat, earthRadius} from '../lng_lat';
-import {angleToRotateBetweenVectors2D, clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
+import {angleToRotateBetweenVectors2D, clamp, degreesToRadians, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
 import {browser} from '../../util/browser';
@@ -17,6 +17,7 @@ import {PaddingOptions} from '../edge_insets';
 import {tileCoordinatesToLocation, tileCoordinatesToMercatorCoordinates} from './mercator_utils';
 import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, clampLngLat, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
 import {EXTENT} from '../../data/extent';
+import {Aabb, Frustum} from '../../util/primitives';
 
 /**
  * Describes the intersection of ray and sphere.
@@ -687,6 +688,46 @@ export class GlobeTransform implements ITransform {
         return [new UnwrappedTileID(0, tileID)];
     }
 
+    private getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
+        if (tileID.z <= 0) {
+            return new Aabb(
+                [-1, -1, -1],
+                [1, 1, 1]
+            );
+        } else if (tileID.z === 1) {
+            return new Aabb(
+                [tileID.x === 0 ? -1 : 0, tileID.y === 0 ? -1 : 0, -1],
+                [tileID.x === 0 ? 0 : 1, tileID.y === 0 ? 0 : 1, 1]
+            );
+        } else {
+            // We can get away with this simple AABB construction, because the extremes
+            // of each X,Y or Z axis will always lie on a tile edge.
+            // This only fails for tiles with zoom level <2, hence the special handling above.
+
+            const corners = [
+                this._projectTileCoordinatesToSphere(0, 0, tileID),
+                this._projectTileCoordinatesToSphere(EXTENT, 0, tileID),
+                this._projectTileCoordinatesToSphere(EXTENT, EXTENT, tileID),
+                this._projectTileCoordinatesToSphere(0, EXTENT, tileID),
+            ];
+
+            const min: vec3 = [1, 1, 1];
+            const max: vec3 = [-1, -1, -1];
+
+            for (const c of corners) {
+                for (let i = 0; i < 3; i++) {
+                    min[i] = Math.min(min[i], c[i]);
+                    max[i] = Math.max(max[i], c[i]);
+                }
+            }
+
+            return new Aabb(
+                min,
+                max
+            );
+        }
+    }
+
     /**
      * A simple/heuristic function that returns whether the tile is visible under the current transform.
      * @param x - Tile X.
@@ -694,20 +735,20 @@ export class GlobeTransform implements ITransform {
      * @param z - Tile zoom.
      * @returns 0 is not visible, 1 if partially visible, 2 if fully visible.
      */
-    private isTileVisible(x: number, y: number, z: number): number {
+    private isTileVisible(x: number, y: number, z: number, frustum: Frustum): number {
         const notVisible = 0;
         const partiallyVisible = 1;
         const fullyVisible = 2;
 
-        // Heuristics we use here won't work for tiles that span more than 90°,
-        // so we just return all tiles larger than that as partially visible.
-        if (z < 2) {
+        const tileID = {x, y, z};
+
+        if (z < 1) {
             return partiallyVisible;
         }
 
-        const tileID = {x, y, z};
-
-        const planeDirectionCoords = sphereSurfacePointToCoordinates([this._cachedClippingPlane[0], this._cachedClippingPlane[1], this._cachedClippingPlane[2]]);
+        const planeVec = createVec3();
+        vec3.normalize(planeVec, [this._cachedClippingPlane[0], this._cachedClippingPlane[1], this._cachedClippingPlane[2]]);
+        const planeDirectionCoords = sphereSurfacePointToCoordinates(planeVec);
         const tileMinCoords = tileCoordinatesToLocation(0, EXTENT, tileID);
         const tileMaxCoords = tileCoordinatesToLocation(EXTENT, 0, tileID);
         const mostAboveHorizonCoords = clampLngLat(planeDirectionCoords, tileMinCoords, tileMaxCoords);
@@ -718,60 +759,7 @@ export class GlobeTransform implements ITransform {
             return notVisible;
         }
 
-        const closestToCameraCoords = clampLngLat(this.center, tileMinCoords, tileMaxCoords);
-        const closestToCameraVec = angularCoordinatesToSurfaceVector(closestToCameraCoords);
-
-        const projectedClosest = createVec4();
-        projectedClosest[0] = closestToCameraVec[0];
-        projectedClosest[1] = closestToCameraVec[1];
-        projectedClosest[2] = closestToCameraVec[2];
-        projectedClosest[3] = 1;
-        vec4.transformMat4(projectedClosest, projectedClosest, this._globeViewProjMatrixNoCorrection);
-        projectedClosest[0] /= projectedClosest[3];
-        projectedClosest[1] /= projectedClosest[3];
-        projectedClosest[2] /= projectedClosest[3];
-
-        if (projectedClosest[0] < -1 || projectedClosest[0] > 1 || projectedClosest[1] < -1 || projectedClosest[1] > 1 || projectedClosest[2] < -1 || projectedClosest[2] > 1) {
-            return notVisible;
-        }
-
-        const corners = [
-            this._projectTileCoordinatesToSphere(0, 0, tileID),
-            this._projectTileCoordinatesToSphere(EXTENT, 0, tileID),
-            this._projectTileCoordinatesToSphere(EXTENT, EXTENT, tileID),
-            this._projectTileCoordinatesToSphere(0, EXTENT, tileID),
-        ];
-
-        // Project all corner points, see whether they can be visible.
-        const projected = corners.map(x => {
-            const pos: vec4 = [x[0], x[1], x[2], 1];
-            vec4.transformMat4(pos, pos, this._globeViewProjMatrixNoCorrection);
-            pos[0] /= pos[3];
-            pos[1] /= pos[3];
-            pos[2] /= pos[3];
-            return pos;
-        });
-
-        // Get clip space AABB of projected corner points
-        const min = [2, 2, 2];
-        const max = [-2, -2, -2];
-
-        for (const p of projected) {
-            for (let i = 0; i < 3; i++) {
-                min[i] = Math.min(min[i], p[i]);
-                max[i] = Math.max(max[i], p[i]);
-            }
-        }
-
-        // if (max[0] < -1 || min[0] > 1 || max[1] < -1 || min[1] > 1 || max[2] < -1 || min[2] > 1) {
-        //     return notVisible;
-        // }
-
-        if (min[0] >= -1 && max[0] <= 1 && min[1] >= -1 && max[1] <= 1 && min[2] >= -1 && max[2] <= 1) {
-            return fullyVisible;
-        }
-
-        return partiallyVisible;
+        return this.getTileAABB(tileID).intersects(frustum);
     }
 
     coveringTiles(options: CoveringTilesOptions): OverscaledTileID[] {
@@ -788,6 +776,10 @@ export class GlobeTransform implements ITransform {
         if (options.maxzoom !== undefined && z > options.maxzoom) {
             z = options.maxzoom;
         }
+
+        const matrix = mat4.clone(this._globeViewProjMatrixNoCorrectionInverted);
+        mat4.scale(matrix, matrix, [1, 1, -1]);
+        const cameraFrustum = Frustum.fromInvProjectionMatrix(matrix);
 
         const cameraCoord = this.screenPointToMercatorCoordinate(this.getCameraPoint());
         const centerCoord = MercatorCoordinate.fromLngLat(this.center);
@@ -815,7 +807,7 @@ export class GlobeTransform implements ITransform {
 
             // Visibility of a tile is not required if any of its ancestor if fully inside the frustum
             if (!fullyVisible) {
-                const intersectResult = this.isTileVisible(it.x, it.y, it.zoom);
+                const intersectResult = this.isTileVisible(it.x, it.y, it.zoom, cameraFrustum);
 
                 if (intersectResult === 0)
                     continue;

@@ -4,7 +4,7 @@ class Frustum {
 
     constructor(public points: vec4[], public planes: vec4[]) { }
 
-    public static fromInvProjectionMatrix(invProj: mat4, worldSize: number, zoom: number): Frustum {
+    public static fromInvProjectionMatrix(invProj: mat4, worldSize: number = 1, zoom: number = 0): Frustum {
         const clipSpaceCorners = [
             [-1, 1, -1, 1],
             [1, 1, -1, 1],
