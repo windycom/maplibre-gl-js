@@ -2,7 +2,7 @@ import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
 import {MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
 import {MercatorTransform} from './mercator_transform';
 import {LngLat, earthRadius} from '../lng_lat';
-import {angleToRotateBetweenVectors2D, clamp, degreesToRadians, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
+import {angleToRotateBetweenVectors2D, clamp, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
 import {browser} from '../../util/browser';
@@ -14,8 +14,8 @@ import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {CoveringTilesOptions, CoveringZoomOptions, IReadonlyTransform, ITransform, TransformUpdateResult} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
-import {tileCoordinatesToLocation, tileCoordinatesToMercatorCoordinates} from './mercator_utils';
-import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, clampLngLat, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
+import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
+import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
 import {EXTENT} from '../../data/extent';
 import {Aabb, Frustum} from '../../util/primitives';
 
@@ -695,9 +695,12 @@ export class GlobeTransform implements ITransform {
                 [1, 1, 1]
             );
         } else if (tileID.z === 1) {
+            // X is 1 at lng=E90°
+            // Y is 1 at **north** pole
+            // Z is 1 at null island
             return new Aabb(
-                [tileID.x === 0 ? -1 : 0, tileID.y === 0 ? -1 : 0, -1],
-                [tileID.x === 0 ? 0 : 1, tileID.y === 0 ? 0 : 1, 1]
+                [tileID.x === 0 ? -1 : 0, tileID.y === 0 ? 0 : -1, -1],
+                [tileID.x === 0 ? 0 : 1, tileID.y === 0 ? 1 : 0, 1]
             );
         } else {
             // We can get away with this simple AABB construction, because the extremes
@@ -721,6 +724,16 @@ export class GlobeTransform implements ITransform {
                 }
             }
 
+            // Special handling of poles - we need to extend the tile AABB
+            // to include the pole for tiles that border mercator north/south edge.
+            if (tileID.y === 0 || (tileID.y === (1 << tileID.z) - 1)) {
+                const pole = [0, tileID.y === 0 ? 1 : -1, 0];
+                for (let i = 0; i < 3; i++) {
+                    min[i] = Math.min(min[i], pole[i]);
+                    max[i] = Math.max(max[i], pole[i]);
+                }
+            }
+
             return new Aabb(
                 min,
                 max
@@ -736,30 +749,26 @@ export class GlobeTransform implements ITransform {
      * @returns 0 is not visible, 1 if partially visible, 2 if fully visible.
      */
     private isTileVisible(x: number, y: number, z: number, frustum: Frustum): number {
+        // Named constants for better readability
         const notVisible = 0;
         const partiallyVisible = 1;
         const fullyVisible = 2;
 
         const tileID = {x, y, z};
+        const aabb = this.getTileAABB(tileID);
 
-        if (z < 1) {
-            return partiallyVisible;
-        }
+        const frustumTest = aabb.intersectsFrustum(frustum);
+        const planeTest = aabb.intersectsPlane(this._cachedClippingPlane);
 
-        const planeVec = createVec3();
-        vec3.normalize(planeVec, [this._cachedClippingPlane[0], this._cachedClippingPlane[1], this._cachedClippingPlane[2]]);
-        const planeDirectionCoords = sphereSurfacePointToCoordinates(planeVec);
-        const tileMinCoords = tileCoordinatesToLocation(0, EXTENT, tileID);
-        const tileMaxCoords = tileCoordinatesToLocation(EXTENT, 0, tileID);
-        const mostAboveHorizonCoords = clampLngLat(planeDirectionCoords, tileMinCoords, tileMaxCoords);
-        const mostAboveHorizonVec = angularCoordinatesToSurfaceVector(mostAboveHorizonCoords);
-        const largestDistFromPlane = pointPlaneSignedDistance(this._cachedClippingPlane, mostAboveHorizonVec);
-
-        if (largestDistFromPlane < 0) {
+        if (frustumTest === notVisible || planeTest === notVisible) {
             return notVisible;
         }
 
-        return this.getTileAABB(tileID).intersects(frustum);
+        if (frustumTest === fullyVisible && planeTest === fullyVisible) {
+            return fullyVisible;
+        }
+
+        return partiallyVisible;
     }
 
     coveringTiles(options: CoveringTilesOptions): OverscaledTileID[] {
