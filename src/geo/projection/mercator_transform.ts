@@ -291,8 +291,19 @@ export class MercatorTransform implements ITransform {
         };
 
         // Do a depth-first traversal to find visible tiles and proper levels of detail
-        const stack = [];
-        const result = [];
+        const stack: Array<{
+            aabb: Aabb;
+            zoom: number;
+            x: number;
+            y: number;
+            wrap: number;
+            fullyVisible: boolean;
+        }> = [];
+        const result: Array<{
+            tileID: OverscaledTileID;
+            distanceSq: number;
+            tileDistanceToCamera: number;
+        }> = [];
         const maxZoom = z;
         const overscaledZ = options.reparseOverscaled ? actualZ : z;
 
@@ -314,7 +325,7 @@ export class MercatorTransform implements ITransform {
 
             // Visibility of a tile is not required if any of its ancestor if fully inside the frustum
             if (!fullyVisible) {
-                const intersectResult = it.aabb.intersects(cameraFrustum);
+                const intersectResult = it.aabb.intersectsFrustum(cameraFrustum);
 
                 if (intersectResult === 0)
                     continue;
