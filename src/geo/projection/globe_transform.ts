@@ -1360,7 +1360,7 @@ export class GlobeTransform implements ITransform {
         return {
             farZ: this.farZ,
             nearZ: this.nearZ,
-            fov: this.fov * Math.PI / 180, // convert to radians
+            fov: this.fov * Math.PI / 180, // fov converted to radians
             modelViewProjectionMatrix: this.modelViewProjectionMatrix,
             projectionMatrix: this.projectionMatrix,
             shader: {
@@ -1377,7 +1377,10 @@ export class GlobeTransform implements ITransform {
                 'u_projection_clipping_plane': [...projectionData.u_projection_clipping_plane.values()],
                 'u_projection_transition': projectionData.u_projection_transition,
                 'u_projection_fallback_matrix': [...fallbackMatrixScaled.values()],
-            }
+            },
+            getSubdivisionForZoomLevel: (z: number) => {
+                return this._projectionInstance.subdivisionGranularity.tile.getGranularityForZoomLevel(z);
+            },
         };
     }
 }
