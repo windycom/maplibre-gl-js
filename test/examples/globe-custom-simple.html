@@ -111,6 +111,26 @@
                     ]),
                     gl.STATIC_DRAW
                 );
+
+                // Explanation of horizon clipping in MapLibre globe projection:
+                //
+                // When zooming in, the triangle will eventually start doing what at first glance
+                // appears to be clipping the underlying map.
+                //
+                // Instead it is being clipped by the "horizon" plane, which the globe uses to
+                // clip any geometry behind horizon (regular face culling isn't enough).
+                // The horizon plane is not necessarily aligned with the near/far planes.
+                // The clipping is done by assigning a custom value to `gl_Position.z` in the `projectTile`
+                // MapLibre uses a constant z value per layer, so `gl_Position.z` can be anything,
+                // since it later gets overwritten by `glDepthRange`.
+                //
+                // At high zooms, the triangle's three vertices can end up beyond the horizon plane,
+                // resulting in the triangle getting clipped.
+                //
+                // This can be fixed by subdividing the triangle's geometry.
+                // This is in general advisable to do, since without subdivision
+                // geometry would not project to a curved shape under globe projection.
+                // MapLibre also internally subdivides all geometry when globe projection is used.
             },
 
             // method fired on each animation frame
