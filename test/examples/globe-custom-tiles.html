@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <title>Display a globe with a vector map</title>
-    <meta property="og:description" content="Display a custom layer on a globe." />
+    <title>Display custom layer tiles on a globe</title>
+    <meta property="og:description" content="Display custom layer tiles on a globe." />
     <meta charset='utf-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel='stylesheet' href='../../dist/maplibre-gl.css' />
@@ -15,12 +15,27 @@
 <body>
 <div id="map"></div>
 <script>
-    // TODO: example description
+    // This example demonstrates how to draw a custom layer consisting of
+    // web mercator tiles with a custom shader.
+    // Each drawn tile must be subdivided in order to be properly curved.
+    // This example also handles poles.
+
+    // Note that sometimes you can encounter single-pixel seams between tiles
+    // of different zoom levels. To fix this, first draw all tiles using meshes
+    // *without* borders and mark all drawn pixels in stencil, then draw
+    // all tiles again, this time *with* borders and with stencil set to
+    // fail all previously drawn pixels.
+    // This approach ensures that no pixel that can be drawn inside some tile
+    // will be instead covered by a mesh border (which is likely to contain invalid data).
+    //
+    // MapLibre uses this approach to draw raster tiles on globe. Borders on raster tiles
+    // contain ugl stretched textures, we don't want that to cover pixels that could be
+    // filled with a valid neighbouring tile.
 
     const EXTENT = 8192;
     const BORDER = EXTENT / 128;
     /**
-     * Returns a "mesh" object that covers and entire tile.
+     * Returns a "mesh" of a tesselated quad that covers an entire tile.
      * - gl - the WebGL context
      * - granularity - the granularity of the mesh subdivision (number of quads per axis)
      * - border - when true, a small border will be generated for the tile
@@ -117,10 +132,9 @@
     }
 
     // Generate an arbitrary list of tiles to render
-
     function generateTileList(list, current) {
         list.push(current);
-        const subdivide = current.z < 2 || (current.x === current.y && current.z < 7);
+        const subdivide = current.z < 2 || (current.x === current.y && current.z < 3) || (current.x === 0 && current.y === 0 && current.z < 7);
         if (subdivide) {
             for (let x = 0; x < 2; x++) {
                 for (let y = 0; y < 2; y++) {
@@ -133,7 +147,6 @@
             }
         }
     }
-
     const tilesToRender = [];
     generateTileList(tilesToRender, {x: 0, y: 0, z: 0});
 
@@ -143,10 +156,21 @@
         const map = new maplibregl.Map({
             container: 'map',
             style: fetchedStyle,
-            zoom: 3,
+            zoom: 2,
             center: [7.5, 58],
             antialias: true,
         });
+
+        const uniforms = [
+            'u_matrix',
+            'u_projection_fallback_matrix',
+            'u_projection_matrix',
+            'u_projection_clipping_plane',
+            'u_projection_transition',
+            'u_projection_tile_mercator_coords',
+            'u_color',
+            'u_color_mix',
+        ];
 
         // create a custom style layer to implement the WebGL content
         const highlightLayer = {
@@ -206,15 +230,22 @@
 
                 this.aPos = gl.getAttribLocation(program, 'a_pos');
 
-                this.shaderMap.set(shaderDescription.variantName, program);
+                const locations = {};
+
+                for (const uniform of uniforms) {
+                    locations[uniform] = gl.getUniformLocation(program, uniform);
+                }
+
+                this.shaderMap.set(shaderDescription.variantName, {
+                    program,
+                    locations
+                });
 
                 return program;
             },
 
             getTileMesh(gl, args, x, y, z, border) {
-                // We need constant granularity here to demonstrate why you sometimes need borders when drawing tiles.
-                const granularity = 16;
-                //const granularity = args.getSubdivisionForZoomLevel(z);
+                const granularity = args.getSubdivisionForZoomLevel(z);
                 const north = y === 0;
                 const south = y === (1 << z) - 1;
                 const key = `${granularity}_${north}_${south}_${border}`;
@@ -232,76 +263,73 @@
 
             // method fired on each animation frame
             render (gl, matrix, args) {
-                const program = this.getShader(gl, args.shader);
+                const {program, locations} = this.getShader(gl, args.shader);
 
                 const isBorderDemo = true;
 
-                gl.disable(gl.CULL_FACE);
                 gl.disable(gl.DEPTH_TEST);
                 gl.disable(gl.STENCIL_TEST);
+                gl.enable(gl.BLEND);
+                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
                 gl.useProgram(program);
                 gl.uniformMatrix4fv(
-                    gl.getUniformLocation(program, 'u_matrix'),
+                    locations['u_matrix'],
                     false,
                     matrix
                 );
 
                 gl.uniformMatrix4fv(
-                    gl.getUniformLocation(program, 'u_projection_fallback_matrix'),
+                    locations['u_projection_fallback_matrix'],
                     false,
                     args.uniforms.u_projection_fallback_matrix
                 );
                 gl.uniformMatrix4fv(
-                    gl.getUniformLocation(program, 'u_projection_matrix'),
+                    locations['u_projection_matrix'],
                     false,
                     args.uniforms.u_projection_matrix
                 );
                 gl.uniform4f(
-                    gl.getUniformLocation(program, 'u_projection_clipping_plane'),
+                    locations['u_projection_clipping_plane'],
                     ...args.uniforms.u_projection_clipping_plane
                 );
                 gl.uniform1f(
-                    gl.getUniformLocation(program, 'u_projection_transition'),
+                    locations['u_projection_transition'],
                     args.uniforms.u_projection_transition
                 );
 
-                for (const withBorder of [true, false]) {
-                    for (const tile of tilesToRender) {
-                        // Set tile mercator extents accordingly
-                        const tileSize = 1.0 / (1 << tile.z);
-                        gl.uniform4f(
-                            gl.getUniformLocation(program, 'u_projection_tile_mercator_coords'),
-                            tile.x * tileSize, // mercator offset X
-                            tile.y * tileSize, // mercator offset Y
-                            tileSize / EXTENT, // mercator size (also divide by tile extent)
-                            tileSize / EXTENT  // mercator size
-                        );
-                        const color = withBorder ? 0.0 : 1.0;
-                        gl.uniform4f(
-                            gl.getUniformLocation(program, 'u_color'),
-                            color, color, color, 1.0
-                        );
-                        gl.uniform1f(
-                            gl.getUniformLocation(program, 'u_color_mix'),
-                            isBorderDemo ? 0.9 : 0.0
-                        );
-                        const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, withBorder);
-                        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
-                        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
-                        gl.enableVertexAttribArray(this.aPos);
-                        gl.vertexAttribPointer(this.aPos, 2, gl.SHORT, false, 0, 0);
-                        gl.enable(gl.BLEND);
-                        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                        gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
-                    }
+                for (const tile of tilesToRender) {
+                    // Set tile mercator extents accordingly
+                    const tileSize = 1.0 / (1 << tile.z);
+                    gl.uniform4f(
+                        locations['u_projection_tile_mercator_coords'],
+                        tile.x * tileSize, // mercator offset X
+                        tile.y * tileSize, // mercator offset Y
+                        tileSize / EXTENT, // mercator size (also divide by tile extent)
+                        tileSize / EXTENT  // mercator size
+                    );
+                    const color = 0.0;
+                    gl.uniform4f(
+                        locations['u_color'],
+                        color, color, color, 1.0
+                    );
+                    gl.uniform1f(
+                        locations['u_color_mix'],
+                        isBorderDemo ? 0.7 : 0.0
+                    );
+                    const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
+                    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+                    gl.enableVertexAttribArray(this.aPos);
+                    gl.vertexAttribPointer(this.aPos, 2, gl.SHORT, false, 0, 0);
+                    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
                 }
             }
         };
 
         // add the custom style layer to the map
         map.on('load', () => {
-            map.addLayer(highlightLayer, 'crimea-fill');
+            map.addLayer(highlightLayer);
         });
     });
 </script>
