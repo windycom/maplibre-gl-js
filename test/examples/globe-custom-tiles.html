@@ -30,12 +30,13 @@
     //
     // MapLibre uses this approach to draw raster tiles on globe. Borders on raster tiles
     // contain ugl stretched textures, we don't want that to cover pixels that could be
-    // filled with a valid neighbouring tile.
+    // filled with a valid neighboring tile.
 
     const EXTENT = 8192;
     const BORDER = EXTENT / 128;
+
     /**
-     * Returns a "mesh" of a tesselated quad that covers an entire tile.
+     * Returns a "mesh" of a tessellated quad that covers an entire tile.
      * - gl - the WebGL context
      * - granularity - the granularity of the mesh subdivision (number of quads per axis)
      * - border - when true, a small border will be generated for the tile
@@ -194,7 +195,7 @@
 
                 void main() {
                     v_pos = a_pos / float(${EXTENT});
-                    gl_Position = projectTile(a_pos);
+                    gl_Position = projectTile(a_pos); // Note: we pass in-tile position in range 0..EXTENT to projectTile
                 }`;
 
                 // create GLSL source for fragment shader
