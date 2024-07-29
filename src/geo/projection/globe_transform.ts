@@ -1,7 +1,7 @@
 import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
 import {MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
 import {MercatorTransform} from './mercator_transform';
-import {LngLat, earthRadius} from '../lng_lat';
+import {LngLat, LngLatLike, earthRadius} from '../lng_lat';
 import {angleToRotateBetweenVectors2D, clamp, createIdentityMat4f64, createMat4f64, createVec3f64, createVec4f64, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
@@ -888,11 +888,6 @@ export class GlobeTransform implements ITransform {
         this.apply(this._mercatorTransform);
     }
 
-    customLayerMatrix(): mat4 {
-        // Globe: TODO
-        return this._mercatorTransform.customLayerMatrix();
-    }
-
     maxPitchScaleFactor(): number {
         // Using mercator version of this should be good enough approximation for globe.
         return this._mercatorTransform.maxPitchScaleFactor();
@@ -1339,7 +1334,13 @@ export class GlobeTransform implements ITransform {
         return sphereSurfacePointToCoordinates(closestOnHorizon);
     }
 
+    customLayerMatrix(): mat4 {
+        // Globe: TODO
+        return this._mercatorTransform.customLayerMatrix();
+    }
+
     getCustomLayerArgs() {
+        const mercatorArgs = this._mercatorTransform.getCustomLayerArgs();
         const projectionData = this.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
         // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
         // the shader projection machinery still expects inputs to be in tile units range [0..EXTENT].
@@ -1372,6 +1373,12 @@ export class GlobeTransform implements ITransform {
             },
             getSubdivisionForZoomLevel: (z: number) => {
                 return this._projectionInstance.subdivisionGranularity.tile.getGranularityForZoomLevel(z);
+            },
+            getMatrixForModel: (location: LngLatLike, altitude?: number) => {
+                return mercatorArgs.getMatrixForModel(location, altitude);
+                // const lnglat = LngLat.convert(location);
+                // const m = createMat4f64();
+                // return m;
             },
         };
     }

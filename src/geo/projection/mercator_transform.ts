@@ -1,7 +1,7 @@
-import {LngLat} from '../lng_lat';
+import {LngLat, LngLatLike} from '../lng_lat';
 import {MercatorCoordinate, mercatorXfromLng, mercatorYfromLat, mercatorZfromAltitude} from '../mercator_coordinate';
 import Point from '@mapbox/point-geometry';
-import {wrap, clamp} from '../../util/util';
+import {wrap, clamp, createIdentityMat4f64} from '../../util/util';
 import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import {Terrain} from '../../render/terrain';
@@ -559,10 +559,6 @@ export class MercatorTransform implements ITransform {
         return cache[posMatrixKey];
     }
 
-    customLayerMatrix(): mat4 {
-        return this._mercatorMatrix.slice() as any;
-    }
-
     /**
      * This mercator implementation returns center lngLat and zoom to ensure that:
      *
@@ -875,13 +871,31 @@ export class MercatorTransform implements ITransform {
         }
     }
 
+    customLayerMatrix(): mat4 {
+        return this._mercatorMatrix.slice() as any;
+    }
+
     getCustomLayerArgs() {
         return {
             farZ: this.farZ,
             nearZ: this.nearZ,
             fov: this.fov * Math.PI / 180, // convert to radians
             modelViewProjectionMatrix: this.modelViewProjectionMatrix,
-            projectionMatrix: this.projectionMatrix
+            projectionMatrix: this.projectionMatrix,
+            getMatrixForModel: (location: LngLatLike, altitude?: number) => {
+                const modelAsMercatorCoordinate = MercatorCoordinate.fromLngLat(
+                    location,
+                    altitude
+                );
+                const scale = modelAsMercatorCoordinate.meterInMercatorCoordinateUnits();
+
+                const m = createIdentityMat4f64();
+                mat4.translate(m, m, [modelAsMercatorCoordinate.x, modelAsMercatorCoordinate.y, modelAsMercatorCoordinate.z]);
+                mat4.rotateZ(m, m, Math.PI);
+                mat4.rotateX(m, m, Math.PI / 2);
+                mat4.scale(m, m, [-scale, scale, scale]);
+                return m;
+            },
         };
     }
 }
