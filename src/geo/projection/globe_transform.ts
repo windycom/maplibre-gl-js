@@ -1335,8 +1335,7 @@ export class GlobeTransform implements ITransform {
     }
 
     customLayerMatrix(): mat4 {
-        // Globe: TODO
-        return this._mercatorTransform.customLayerMatrix();
+        return this._globeRendering ? this.modelViewProjectionMatrix : this._mercatorTransform.customLayerMatrix();
     }
 
     getCustomLayerArgs() {
@@ -1375,10 +1374,19 @@ export class GlobeTransform implements ITransform {
                 return this._projectionInstance.subdivisionGranularity.tile.getGranularityForZoomLevel(z);
             },
             getMatrixForModel: (location: LngLatLike, altitude?: number) => {
-                return mercatorArgs.getMatrixForModel(location, altitude);
-                // const lnglat = LngLat.convert(location);
-                // const m = createMat4f64();
-                // return m;
+                if (!this._globeRendering) {
+                    return mercatorArgs.getMatrixForModel(location, altitude);
+                }
+                const lnglat = LngLat.convert(location);
+                const scale = 1.0 / earthRadius;
+
+                const m = createIdentityMat4f64();
+                mat4.rotateY(m, m, lnglat.lng / 180.0 * Math.PI);
+                mat4.rotateX(m, m, -lnglat.lat / 180.0 * Math.PI);
+                mat4.translate(m, m, [0, 0, 1 + altitude / earthRadius]);
+                mat4.rotateX(m, m, Math.PI * 0.5);
+                mat4.scale(m, m, [scale, scale, scale]);
+                return m;
             },
         };
     }
