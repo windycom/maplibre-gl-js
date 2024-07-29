@@ -1347,7 +1347,7 @@ export class GlobeTransform implements ITransform {
         // the fallback projection matrix by EXTENT.
         // Note that the regular globe projection matrix does not need to be modified, since the rescaling happens by setting
         // the `u_projection_tile_mercator_coords` uniform correctly later.
-        const fallbackMatrixScaled = createMat4();
+        const fallbackMatrixScaled = createMat4f64();
         mat4.scale(fallbackMatrixScaled, projectionData.u_projection_fallback_matrix, [EXTENT, EXTENT, 1]);
         return {
             farZ: this.farZ,
