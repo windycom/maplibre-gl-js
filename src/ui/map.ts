@@ -61,6 +61,7 @@ import type {ControlPosition, IControl} from './control/control';
 import type {QueryRenderedFeaturesOptions, QuerySourceFeatureOptions} from '../source/query_features';
 import {MercatorTransform} from '../geo/projection/mercator_transform';
 import {ITransform} from '../geo/transform_interface';
+import {ICameraHelper} from '../geo/projection/camera_helper';
 
 const version = packageJSON.version;
 
@@ -2960,9 +2961,12 @@ export class Map extends Camera {
         webpSupported.testSupport(gl);
     }
 
-    override migrateProjection(newTransform: ITransform) {
-        super.migrateProjection(newTransform);
+    override migrateProjection(newTransform: ITransform, newCameraHelper: ICameraHelper) {
+        super.migrateProjection(newTransform, newCameraHelper);
         this.painter.transform = newTransform;
+        this.fire(new Event('projectiontransition', {
+            newProjection: this.style.projection.name,
+        }));
     }
 
     _contextLost = (event: any) => {
@@ -3110,7 +3114,7 @@ export class Map extends Camera {
         this._placementDirty = this.style && this.style._updatePlacement(this.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, transformUpdateResult.forcePlacementUpdate);
 
         if (transformUpdateResult.fireProjectionEvent) {
-            this.fire(new Event('projectiontransition'));
+            this.fire(new Event('projectiontransition', transformUpdateResult.fireProjectionEvent));
         }
 
         // Actually draw

@@ -4,7 +4,6 @@ import {bezier, clamp, extend} from '../util/util';
 import Point from '@mapbox/point-geometry';
 import type {DragPanOptions} from './handler/shim/drag_pan';
 import {EaseToOptions} from './camera';
-import {computeGlobePanCenter} from '../geo/projection/globe_utils';
 
 const defaultInertiaOptions = {
     linearity: 0.3,
@@ -100,18 +99,9 @@ export class HandlerInertia {
         if (deltas.pan.mag()) {
             const result = calculateEasing(deltas.pan.mag(), duration, extend({}, defaultPanInertiaOptions, panInertiaOptions || {}));
             const finalPan = deltas.pan.mult(result.amount / deltas.pan.mag());
-            if (this._map.transform.useGlobeControls) {
-                const panCenter = computeGlobePanCenter(finalPan, this._map.transform);
-                if (Math.abs(panCenter.lng - this._map.transform.center.lng) > 180) {
-                    // If easeTo target would be over 180° distant, the animation would move in the opposite direction that what the user intended.
-                    // Thus we clamp the movement to 179.5°.
-                    panCenter.lng = this._map.transform.center.lng + 179.5 * Math.sign(panCenter.lng - this._map.transform.center.lng);
-                }
-                easeOptions.center = panCenter;
-            } else {
-                easeOptions.offset = finalPan;
-                easeOptions.center = this._map.transform.center;
-            }
+            const computedEaseOptions = this._map.cameraHelper.handlePanInertia(finalPan, this._map.transform);
+            easeOptions.center = computedEaseOptions.easingCenter;
+            easeOptions.offset = computedEaseOptions.easingOffset;
             extendDuration(easeOptions, result);
         }
 
