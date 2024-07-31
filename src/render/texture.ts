@@ -1,8 +1,9 @@
 import type {Context} from '../gl/context';
 import type {RGBAImage, AlphaImage} from '../util/image';
-import {isImageBitmap} from '../util/util';
+import {extend, isImageBitmap} from '../util/util';
 
-export type TextureFormat = WebGLRenderingContextBase['RGBA'] | WebGLRenderingContextBase['ALPHA'];
+export type TextureFormatWebGL2 = WebGL2RenderingContextBase['RG8'] | WebGL2RenderingContextBase['R8']
+export type TextureFormat = WebGLRenderingContextBase['RGBA'] |WebGLRenderingContextBase['RGB'] | WebGLRenderingContextBase['ALPHA'] | WebGLRenderingContextBase['LUMINANCE'] | TextureFormatWebGL2;
 export type TextureFilter = WebGLRenderingContextBase['LINEAR'] | WebGLRenderingContextBase['LINEAR_MIPMAP_NEAREST'] | WebGLRenderingContextBase['NEAREST'];
 export type TextureWrap = WebGLRenderingContextBase['REPEAT'] | WebGLRenderingContextBase['CLAMP_TO_EDGE'] | WebGLRenderingContextBase['MIRRORED_REPEAT'];
 
@@ -35,12 +36,18 @@ export class Texture {
         this.context = context;
         this.format = format;
         this.texture = context.gl.createTexture();
-        this.update(image, options);
+
+        // Pass format to the update method to enforce its usage
+        this.update(image, extend(options, {format}));
     }
 
+    /**
+     * @summary Updates texture content, can also change texture format if necessary
+     */
     update(image: TextureImage, options?: {
         premultiply?: boolean;
         useMipmap?: boolean;
+        format?:TextureFormat;
     } | null, position?: {
         x: number;
         y: number;
@@ -51,27 +58,36 @@ export class Texture {
         const {gl} = context;
 
         this.useMipmap = Boolean(options && options.useMipmap);
+
+        // Use default maplibre format gl.RGBA to remain compatible with all users of the Texture class
+        const newFormat = options && options.format ? options.format : gl.RGBA;
+        const formatChanged = this.format !== newFormat;
+        this.format = newFormat;
+
         gl.bindTexture(gl.TEXTURE_2D, this.texture);
 
         context.pixelStoreUnpackFlipY.set(false);
         context.pixelStoreUnpack.set(1);
         context.pixelStoreUnpackPremultiplyAlpha.set(this.format === gl.RGBA && (!options || options.premultiply !== false));
 
-        if (resize) {
+        // Since internal-format and format can be represented by different values (e.g. gl.RG8 vs gl.RG) in WebGL2, we need to preform conversion
+        const format = this.textureFormatFromInternalFormat(this.format);
+
+        if (resize || formatChanged) {
             this.size = [width, height];
 
             if (image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || image instanceof HTMLVideoElement || image instanceof ImageData || isImageBitmap(image)) {
-                gl.texImage2D(gl.TEXTURE_2D, 0, this.format, this.format, gl.UNSIGNED_BYTE, image);
+                gl.texImage2D(gl.TEXTURE_2D, 0, this.format, format, gl.UNSIGNED_BYTE, image);
             } else {
-                gl.texImage2D(gl.TEXTURE_2D, 0, this.format, width, height, 0, this.format, gl.UNSIGNED_BYTE, (image as DataTextureImage).data);
+                gl.texImage2D(gl.TEXTURE_2D, 0, this.format, width, height, 0, format, gl.UNSIGNED_BYTE, (image as DataTextureImage).data);
             }
 
         } else {
             const {x, y} = position || {x: 0, y: 0};
             if (image instanceof HTMLImageElement || image instanceof HTMLCanvasElement || image instanceof HTMLVideoElement || image instanceof ImageData || isImageBitmap(image)) {
-                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, gl.RGBA, gl.UNSIGNED_BYTE, image);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, format, gl.UNSIGNED_BYTE, image);
             } else {
-                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, gl.RGBA, gl.UNSIGNED_BYTE, (image as DataTextureImage).data);
+                gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, format, gl.UNSIGNED_BYTE, (image as DataTextureImage).data);
             }
         }
 
@@ -110,5 +126,22 @@ export class Texture {
         const {gl} = this.context;
         gl.deleteTexture(this.texture);
         this.texture = null;
+    }
+
+    /**
+     * @summary Method for accessing texture format by its internal format for cases, when these two are not the same
+     *  - specifically for special WebGL2 formats
+     */
+    textureFormatFromInternalFormat(internalFormat: TextureFormat) {
+        let format: GLenum = internalFormat;
+        switch (internalFormat) {
+            case WebGL2RenderingContext['RG8']:
+                format = WebGL2RenderingContext['RG'];
+                break;
+            case WebGL2RenderingContext['R8']:
+                format = WebGL2RenderingContext['RED'];
+                break;
+        }
+        return format;
     }
 }

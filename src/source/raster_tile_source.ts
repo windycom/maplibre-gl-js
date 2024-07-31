@@ -1,18 +1,18 @@
-import {extend, pick} from '../util/util';
+import { extend, pick } from '../util/util';
 
-import {ImageRequest} from '../util/image_request';
+import { ImageRequest } from '../util/image_request';
 
-import {ResourceType} from '../util/request_manager';
-import {Event, ErrorEvent, Evented} from '../util/evented';
-import {loadTileJson} from './load_tilejson';
-import {TileBounds} from './tile_bounds';
-import {Texture} from '../render/texture';
+import { ResourceType } from '../util/request_manager';
+import { Event, ErrorEvent, Evented } from '../util/evented';
+import { loadTileJson } from './load_tilejson';
+import { TileBounds } from './tile_bounds';
+import { Texture, TextureFormat } from '../render/texture';
 
-import type {Source} from './source';
-import type {OverscaledTileID} from './tile_id';
-import type {Map} from '../ui/map';
-import type {Dispatcher} from '../util/dispatcher';
-import type {Tile} from './tile';
+import type { Source } from './source';
+import type { OverscaledTileID } from './tile_id';
+import type { Map } from '../ui/map';
+import type { Dispatcher } from '../util/dispatcher';
+import type { Tile } from './tile';
 import type {
     RasterSourceSpecification,
     RasterDEMSourceSpecification
@@ -66,6 +66,7 @@ export class RasterTileSource extends Evented implements Source {
     _loaded: boolean;
     _options: RasterSourceSpecification | RasterDEMSourceSpecification;
     _tileJSONRequest: AbortController;
+    _textureFormat: TextureFormat;
 
     constructor(id: string, options: RasterSourceSpecification | RasterDEMSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
         super();
@@ -80,12 +81,22 @@ export class RasterTileSource extends Evented implements Source {
         this.scheme = 'xyz';
         this.tileSize = 512;
         this._loaded = false;
+        this._textureFormat = WebGLRenderingContext.RGBA;
 
         this._options = extend({type: 'raster'}, options);
         extend(this, pick(options, ['url', 'scheme', 'tileSize']));
     }
 
-    async load() {
+
+    set textureFormat(format: TextureFormat) {
+        this._textureFormat = format;
+    }
+
+    get textureFormat(): TextureFormat {
+        return this._textureFormat;
+    }
+
+   async load() {
         this._loaded = false;
         this.fire(new Event('dataloading', {dataType: 'source'}));
         this._tileJSONRequest = new AbortController();
@@ -189,10 +200,12 @@ export class RasterTileSource extends Evented implements Source {
                 const gl = context.gl;
                 const img = response.data;
                 tile.texture = this.map.painter.getTileTexture(img.width);
+
                 if (tile.texture) {
-                    tile.texture.update(img, {useMipmap: true});
+                    // We need to update the format since tile textures are being reused by various sources
+                    tile.texture.update(img, {useMipmap: true, format: this.textureFormat});
                 } else {
-                    tile.texture = new Texture(context, img, gl.RGBA, {useMipmap: true});
+                    tile.texture = new Texture(context, img, this.textureFormat, {useMipmap: true});
                     tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
                 }
                 tile.state = 'loaded';
