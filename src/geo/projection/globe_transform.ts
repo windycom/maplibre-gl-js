@@ -372,6 +372,7 @@ export class GlobeTransform implements ITransform {
                     type: 'projectiontransition',
                     newProjection: this._globeRendering ? 'globe' : 'globe-mercator',
                 },
+                forceSourceUpdate: true,
             };
         }
     }
