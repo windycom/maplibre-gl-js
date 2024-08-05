@@ -62,6 +62,7 @@ import type {QueryRenderedFeaturesOptions, QuerySourceFeatureOptions} from '../s
 import {MercatorTransform} from '../geo/projection/mercator_transform';
 import {ITransform} from '../geo/transform_interface';
 import {ICameraHelper} from '../geo/projection/camera_helper';
+import {MercatorCameraHelper} from '../geo/projection/mercator_camera_helper';
 
 const version = packageJSON.version;
 
@@ -579,6 +580,7 @@ export class Map extends Camera {
         // Transform specialization will later be set by style when it creates its projection instance.
         // When this happens, the new transform will inherit all properties of this temporary transform.
         const transform = new MercatorTransform();
+        const cameraHelper = new MercatorCameraHelper();
         if (resolvedOptions.minZoom !== undefined) {
             transform.setMinZoom(resolvedOptions.minZoom);
         }
@@ -595,7 +597,7 @@ export class Map extends Camera {
             transform.setRenderWorldCopies(resolvedOptions.renderWorldCopies);
         }
 
-        super(transform, {bearingSnap: resolvedOptions.bearingSnap});
+        super(transform, cameraHelper, {bearingSnap: resolvedOptions.bearingSnap});
 
         this._interactive = resolvedOptions.interactive;
         this._maxTileCacheSize = resolvedOptions.maxTileCacheSize;
@@ -3090,10 +3092,12 @@ export class Map extends Camera {
             this.style.update(parameters);
         }
 
+        const transformUpdateResult = this.transform.newFrameUpdate();
+
         // If we are in _render for any reason other than an in-progress paint
         // transition, update source caches to check for and load any tiles we
         // need for the current transform
-        if (this.style && this._sourcesDirty) {
+        if (this.style && (this._sourcesDirty || transformUpdateResult.forceSourceUpdate)) {
             this._sourcesDirty = false;
             this.style._updateSources(this.transform);
         }
@@ -3110,7 +3114,6 @@ export class Map extends Camera {
             this.transform.setElevation(0);
         }
 
-        const transformUpdateResult = this.transform.newFrameUpdate();
         this._placementDirty = this.style && this.style._updatePlacement(this.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, transformUpdateResult.forcePlacementUpdate);
 
         if (transformUpdateResult.fireProjectionEvent) {

@@ -10,22 +10,6 @@ import {degreesToRadians} from '../../util/util';
 import {projectToWorldCoordinates, unprojectFromWorldCoordinates} from './mercator_utils';
 import {interpolates} from '@maplibre/maplibre-gl-style-spec';
 
-// We need to be able to call this directly from camera.ts
-export function handleJumpToCenterZoomMercator(tr: ITransform, options: { zoom?: number; apparentZoom?: number; center?: LngLatLike }): void {
-    // Mercator zoom & center handling.
-    const optionsZoom = typeof options.zoom === 'number';
-    const optionsApparentZoom = typeof options.apparentZoom === 'number';
-
-    const zoom = optionsZoom ? +options.zoom : (optionsApparentZoom ? +options.apparentZoom : tr.zoom);
-    if (tr.zoom !== zoom) {
-        tr.setZoom(+options.zoom);
-    }
-
-    if (options.center !== undefined) {
-        tr.setCenter(LngLat.convert(options.center));
-    }
-}
-
 /**
  * @internal
  */
@@ -119,8 +103,18 @@ export class MercatorCameraHelper implements ICameraHelper {
         return result;
     }
 
-    handleJumpToCenterZoom(tr: ITransform, options: { zoom?: number; apparentZoom?: number; center?: LngLatLike }): void {
-        handleJumpToCenterZoomMercator(tr, options);
+    handleJumpToCenterZoom(tr: ITransform, options: { zoom?: number; center?: LngLatLike }): void {
+        // Mercator zoom & center handling.
+        const optionsZoom = typeof options.zoom !== 'undefined';
+
+        const zoom = optionsZoom ? +options.zoom : tr.zoom;
+        if (tr.zoom !== zoom) {
+            tr.setZoom(+options.zoom);
+        }
+
+        if (options.center !== undefined) {
+            tr.setCenter(LngLat.convert(options.center));
+        }
     }
 
     handleEaseTo(tr: ITransform, options: EaseToHandlerOptions): EaseToHandlerResult {
@@ -129,14 +123,13 @@ export class MercatorCameraHelper implements ICameraHelper {
         const startPitch = tr.pitch;
         const startPadding = tr.padding;
 
-        const optionsZoom = typeof options.zoom === 'number';
-        const optionsApparentZoom = typeof options.apparentZoom === 'number';
+        const optionsZoom = typeof options.zoom !== 'undefined';
 
         const doPadding = !tr.isPaddingEqual(options.padding);
 
         let isZooming = false;
 
-        const zoom = optionsZoom ? +options.zoom : (optionsApparentZoom ? +options.apparentZoom : tr.zoom);
+        const zoom = optionsZoom ? +options.zoom : tr.zoom;
 
         let pointAtOffset = tr.centerPoint.add(options.offsetAsPoint);
         const locationAtOffset = tr.screenPointToLocation(pointAtOffset);
@@ -190,15 +183,14 @@ export class MercatorCameraHelper implements ICameraHelper {
     }
 
     handleFlyTo(tr: ITransform, options: FlyToHandlerOptions): FlyToHandlerResult {
-        const optionsZoom = typeof options.zoom === 'number';
-        const optionsApparentZoom = typeof options.apparentZoom === 'number';
+        const optionsZoom = typeof options.zoom !== 'undefined';
 
         const startZoom = tr.zoom;
 
         // Obtain target center and zoom
         const constrained = tr.getConstrained(
             LngLat.convert(options.center || options.locationAtOffset),
-            optionsZoom ? +options.zoom : (optionsApparentZoom ? +options.apparentZoom : startZoom)
+            optionsZoom ? +options.zoom : startZoom
         );
         const targetCenter = constrained.center;
         const targetZoom = constrained.zoom;
@@ -212,19 +204,12 @@ export class MercatorCameraHelper implements ICameraHelper {
 
         const scaleOfZoom = zoomScale(targetZoom - startZoom);
 
-        const optionsMinZoom = typeof options.minZoom === 'number';
-        const optionsApparentMinZoom = typeof options.apparentMinZoom === 'number';
+        const optionsMinZoom = typeof options.minZoom !== 'undefined';
 
         let scaleOfMinZoom: number;
 
-        if (optionsMinZoom || optionsApparentMinZoom) {
-            let minZoomPreConstrain;
-            if (optionsMinZoom) {
-                minZoomPreConstrain = Math.min(+options.minZoom, startZoom, targetZoom);
-            } else {
-                // We *do* have apparentMinZoom, but not minZoom, and globe controls are not in effect
-                minZoomPreConstrain = Math.min(+options.apparentMinZoom + startZoom, startZoom, targetZoom);
-            }
+        if (optionsMinZoom) {
+            const minZoomPreConstrain = Math.min(+options.minZoom, startZoom, targetZoom);
             const minZoom = tr.getConstrained(targetCenter, minZoomPreConstrain).zoom;
             scaleOfMinZoom = zoomScale(minZoom - startZoom);
         }

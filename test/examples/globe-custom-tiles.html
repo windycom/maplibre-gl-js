@@ -169,8 +169,6 @@
             'u_projection_clipping_plane',
             'u_projection_transition',
             'u_projection_tile_mercator_coords',
-            'u_color',
-            'u_color_mix',
         ];
 
         // create a custom style layer to implement the WebGL content
@@ -205,12 +203,10 @@
 
                 in vec2 v_pos;
 
-                uniform vec4 u_color;
-                uniform float u_color_mix;
-
                 out highp vec4 fragColor;
                 void main() {
-                    fragColor = mix(vec4(v_pos, 0.0, 0.5), u_color, u_color_mix);
+                    float alpha = 0.5;
+                    fragColor = vec4(v_pos, 0.0, 1.0) * alpha;
                 }`;
 
                 // create a vertex shader
@@ -308,15 +304,6 @@
                         tile.y * tileSize, // mercator offset Y
                         tileSize / EXTENT, // mercator size (also divide by tile extent)
                         tileSize / EXTENT  // mercator size
-                    );
-                    const color = 0.0;
-                    gl.uniform4f(
-                        locations['u_color'],
-                        color, color, color, 1.0
-                    );
-                    gl.uniform1f(
-                        locations['u_color_mix'],
-                        isBorderDemo ? 0.7 : 0.0
                     );
                     const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
                     gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
