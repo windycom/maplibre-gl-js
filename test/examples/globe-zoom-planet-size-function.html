@@ -49,9 +49,6 @@
         // This keeps the map center visually similar to a mercator map with the same x,y and zoom.
         // However, sometimes we want to negate this effect and keep the globe size consistent even when changing latitudes.
         // This function computes what we need to add the the target zoom level when changing latitude.
-        // In general, this is only needed when we want to move the map center *and* change the zoom by some *delta*
-        // (as opposed to chaning zoom *to* some value).
-        // In all other cases, the globe map should behave intuitively.
         function getZoomAdjustment(oldLatitude, newLatitude) {
             return Math.log2(Math.cos(newLatitude / 180 * Math.PI) / Math.cos(oldLatitude / 180 * Math.PI));
         }
