@@ -16,8 +16,11 @@
 <div id="map"></div>
 <script>
     fetch('https://api.maptiler.com/maps/basic/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL').then(response => response.json()).then(fetchedStyle => {
-        fetchedStyle['projection'] = {'type': 'globe'}; // Modify the fetched style before creating the map so that it already starts with globe projection.
-        fetchedStyle['sky'] = {'atmosphere-blend': 0.0}; // Disable sky.
+        // Modify the fetched style before creating the map so that it already starts with globe projection.
+        // See comments in the globe-vector-tiles.html example for more details.
+        fetchedStyle['projection'] = {'type': 'globe'};
+        // Disable sky.
+        fetchedStyle['sky'] = {'atmosphere-blend': 0.0};
 
         const map = new maplibregl.Map({
             container: 'map',

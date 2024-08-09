@@ -29,7 +29,7 @@
     // will be instead covered by a mesh border (which is likely to contain invalid data).
     //
     // MapLibre uses this approach to draw raster tiles on globe. Borders on raster tiles
-    // contain ugl stretched textures, we don't want that to cover pixels that could be
+    // contain ugly stretched textures, we don't want that to cover pixels that could be
     // filled with a valid neighboring tile.
 
     const EXTENT = 8192;
@@ -183,7 +183,8 @@
                 if (this.shaderMap.has(shaderDescription.variantName)) {
                     return this.shaderMap.get(shaderDescription.variantName);
                 }
-                // create GLSL source for vertex shader
+
+                // Create GLSL source for vertex shader
                 const vertexSource = `#version 300 es
                 ${shaderDescription.vertexShaderPrelude}
                 ${shaderDescription.define}

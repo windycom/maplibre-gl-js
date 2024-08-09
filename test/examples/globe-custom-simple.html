@@ -34,11 +34,33 @@
 
             // Helper method for creating a shader based on current map projection - globe will automatically switch to mercator when some condition is fulfilled.
             getShader(gl, shaderDescription) {
+                // Pick a shader based on the current projection, defined by `variantName`.
                 if (this.shaderMap.has(shaderDescription.variantName)) {
                     return this.shaderMap.get(shaderDescription.variantName);
                 }
-                // create GLSL source for vertex shader
+
+                // Create GLSL source for vertex shader
+                //
+                // Note that we need to use a complex function to project from the source mercator
+                // coordinates to the globe. Internal shaders in MapLibre need to do this too.
+                // This is done using the `projectTile` function.
+                // In MapLibre, this function accepts vertex coordinates local to the current tile,
+                // in range 0..EXTENT (8192), but for custom layers MapLibre supplies uniforms such that
+                // the function accepts mercator coordinates of the whole world in range 0..1.
+                // This is controlled by the `u_projection_tile_mercator_coords` uniform.
+                //
+                // The `projectTile` function can also handle mercator to globe transitions and can
+                // handle the mercator projection - different code is supplied based on what projection is used,
+                // and for this reason we use different shaders based on what shader projection variant is currently used.
+                // See `variantName` usage earlier in this file.
+                //
+                // The code for the projection function and uniforms is also supplied by MapLibre
+                // and must be injected into custom layer shaders in order to draw on a globe.
+                // We simply use string interpolation for that here.
+                //
+                // See MapLibre source code for more details, especially src/shaders/_projection_globe.vertex.glsl
                 const vertexSource = `#version 300 es
+                // Inject MapLibre projection code
                 ${shaderDescription.vertexShaderPrelude}
                 ${shaderDescription.define}
                 

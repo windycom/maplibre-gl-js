@@ -16,8 +16,14 @@
 <div id="map"></div>
 <script>
     fetch('https://api.maptiler.com/maps/streets/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL').then(response => response.json()).then(fetchedStyle => {
-        fetchedStyle['projection'] = {'type': 'globe'}; // Modify the fetched style before creating the map so that it already starts with globe projection.
-        fetchedStyle['sky'] = {'atmosphere-blend': 0.0}; // Disable sky.
+        // Modify the fetched style before creating the map so that it already starts with globe projection.
+        // Alternatively, we could use the `map.setProjection()` function,
+        // but that modifies the map's style which is only allowed after map is done loading.
+        // Setting the projection at runtime from mercator to globe using `setProjection`
+        // would cause all tiles to be reloaded, since globe needs additional preprocessing.
+        fetchedStyle['projection'] = {'type': 'globe'};
+        // Disable sky.
+        fetchedStyle['sky'] = {'atmosphere-blend': 0.0};
 
         const map = new maplibregl.Map({
             container: 'map',
