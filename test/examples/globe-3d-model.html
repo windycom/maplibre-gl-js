@@ -28,6 +28,7 @@
     <div id="map"></div>
     <script>
         fetch('https://api.maptiler.com/maps/basic/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL').then(response => response.json()).then(fetchedStyle => {
+            // The API demonstrated in this example will work regardless of projection. Try commenting out this next line to switch to mercator.
             fetchedStyle['projection'] = {'type': 'globe'}; // Modify the fetched style before creating the map so that it already starts with globe projection.
             fetchedStyle['sky'] = {'atmosphere-blend': 0.0}; // Disable sky.
 
@@ -88,6 +89,9 @@
                     // Make the object ~10s of km tall to make it visible at planetary scale.
                     const scaling = 10_000.0;
 
+                    // We can use this API to get the correct model matrix.
+                    // It will work regardless of current projection.
+                    // See MapLibre source code, files mercator_transform.ts or globe_transform.ts, function "getCustomLayerArgs".
                     const modelMatrix = args.getMatrixForModel(modelOrigin, modelAltitude);
                     const m = new THREE.Matrix4().fromArray(matrix);
                     const l = new THREE.Matrix4().fromArray(modelMatrix).scale(
