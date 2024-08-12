@@ -10,10 +10,28 @@
     <style>
         body { margin: 0; padding: 0; }
         html, body, #map { height: 100%; }
+        #project {
+            display: block;
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translate(-50%);
+            width: 50%;
+            height: 40px;
+            padding: 10px;
+            border: none;
+            border-radius: 3px;
+            font-size: 12px;
+            text-align: center;
+            color: #fff;
+            background: #ee8a65;
+        }
     </style>
 </head>
 <body>
 <div id="map"></div>
+<br />
+<button id="project">Toggle projection</button>
 <script>
     // This example demonstrates how to draw a custom layer consisting of
     // web mercator tiles with a custom shader.
@@ -162,6 +180,14 @@
             antialias: true,
         });
 
+        document.getElementById('project').addEventListener('click', () => {
+            // Toggle projection
+            const currentProjection = map.getProjection();
+            map.setProjection({
+                type: currentProjection.type === 'globe' ? 'mercator' : 'globe',
+            });
+        });
+
         const uniforms = [
             'u_matrix',
             'u_projection_fallback_matrix',
@@ -193,8 +219,8 @@
                 out mediump vec2 v_pos;
 
                 void main() {
-                    v_pos = a_pos / float(${EXTENT});
                     gl_Position = projectTile(a_pos); // Note: we pass in-tile position in range 0..EXTENT to projectTile
+                    v_pos = a_pos / float(${EXTENT}); // We divide by EXTENT here just so we have something reasonable to display in the pixel shader.
                 }`;
 
                 // create GLSL source for fragment shader
@@ -278,11 +304,6 @@
                 );
 
                 gl.uniformMatrix4fv(
-                    locations['u_projection_fallback_matrix'],
-                    false,
-                    args.uniforms.u_projection_fallback_matrix
-                );
-                gl.uniformMatrix4fv(
                     locations['u_projection_matrix'],
                     false,
                     args.uniforms.u_projection_matrix
@@ -305,6 +326,18 @@
                         tile.y * tileSize, // mercator offset Y
                         tileSize / EXTENT, // mercator size (also divide by tile extent)
                         tileSize / EXTENT  // mercator size
+                    );
+                    gl.uniformMatrix4fv(
+                        locations['u_projection_fallback_matrix'],
+                        false,
+                        args.getMercatorTileProjectionMatrix({
+                            wrap: 0,
+                            canonical: {
+                                x: tile.x,
+                                y: tile.y,
+                                z: tile.z,
+                            }
+                        })
                     );
                     const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
                     gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
