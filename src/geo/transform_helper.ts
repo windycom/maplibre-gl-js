@@ -1,4 +1,4 @@
-import {LngLat} from './lng_lat';
+import {LngLat, LngLatLike} from './lng_lat';
 import {LngLatBounds} from './lng_lat_bounds';
 import Point from '@mapbox/point-geometry';
 import {wrap, clamp} from '../util/util';
@@ -31,6 +31,32 @@ export function zoomScale(zoom: number) { return Math.pow(2, zoom); }
  * Computes zoom level from scaling.
  */
 export function scaleZoom(scale: number) { return Math.log(scale) / Math.LN2; }
+
+export type UnwrappedTileIDType = {
+    wrap?: number;
+    canonical: {
+        x: number;
+        y: number;
+        z: number;
+    };
+};
+
+export type CustomLayerArgs = {
+    farZ: number;
+    nearZ: number;
+    fov: number; // In radians
+    modelViewProjectionMatrix: mat4;
+    projectionMatrix: mat4;
+    shader: {
+        variantName: string;
+        vertexShaderPrelude: string;
+        define: string;
+    };
+    uniforms: {[key: string]: number | Array<number>};
+    getSubdivisionForZoomLevel(z: number): number;
+    getMatrixForModel(location: LngLatLike, altitude?: number): mat4;
+    getMercatorTileProjectionMatrix(unwrappedTile: UnwrappedTileIDType): mat4;
+};
 
 export type TransformHelperCallbacks = {
     /**

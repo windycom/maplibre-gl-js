@@ -9,6 +9,7 @@ import {Terrain} from '../render/terrain';
 import {ProjectionData} from '../render/program/projection_program';
 import {PointProjection} from '../symbol/projection';
 import {MapProjectionEvent} from '../ui/events';
+import {CustomLayerArgs} from './transform_helper';
 
 export type CoveringZoomOptions = {
     /**
@@ -477,9 +478,9 @@ export interface IReadonlyTransform extends ITransformGetters {
     projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection;
 
     /**
-     * Returns an object with projection-specific arguments to be passed to custom layers.
+     * Mutates the object, adding projection-specific arguments to be passed to custom layers.
      */
-    getCustomLayerArgs(): any;
+    fillCustomLayerArgs(args: CustomLayerArgs): void;
 }
 
 /**
