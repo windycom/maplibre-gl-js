@@ -33,9 +33,10 @@ If were were to draw mercator tiles with globe shaders directly, we would end up
 This is due to how polygons and lines are triangulated in MapLibre - the earcut algorithm
 creates as few triangles as possible, which can sometimes result in huge triangles, for example in the oceans.
 This behavior is desirable in mercator maps, but if we were to project the vertices of such large triangles to globe directly,
-we would not get curved horizons, lines, etc.
+we would not get curved horizons, lines, etc. The figure below demonstrates how globe would look without subdivision.
+Note the deformed oceans, and the USA-Canada border that is not properly curved.
 
-TODO example image
+![](assets/no_subdivision.png)
 
 For this reason, before a tile is finished loading, its geometry (both polygons and lines) is further subdivided.
 This subdivision is handled in `subdividePolygon` and `subdivideVertexLine` functions in `src/render/subdivision.ts`
@@ -47,9 +48,20 @@ When modifying subdivision, beware that it is very prone to subtle errors, resul
 Subdivision should also split the geometry in consistent places, so that polygons and lines match up correctly when
 projected. We use subdivision that results in a square grid, visible in the figure below.
 
-![](wireframe.png)
+![](assets/wireframe.png)
 
-TODO subdivision granularity settings
+Subdivision is configured in the Projection object (inheriting from `src/geo/projection/projection.ts`).
+See `src/geo/projection/globe.ts` for an example.
+
+Subdivision granularity is defined by the base tile granularity and minimal allowed granularity.
+The tile for zoom level 0 will have base granularity, tile for zoom 1 will have half that, etc.,
+but never less than minimal granularity.
+
+The maximal subdivision granularity of 128 for fill layers is enough to get nicely curved horizons,
+while also not generating too much new geometry and not overflowing the 16 bit vertex indices used throughout MapLibre.
+
+Raster tiles in particular need a relative high base granularity, as otherwise they would exhibit
+visible warping and deformations when changing zoom levels.
 
 ## Floating point precision & transitioning to mercator
 
@@ -69,17 +81,43 @@ they are already very close.
 The transition animation is implemented in the shader, in `interpolateProjection` function in `src/shaders/_projection_globe.vertex.glsl`.
 It is controlled by a "globeness" parameter, also stored in `globe_transform.ts`.
 
-# TODO
+## GPU atan() error correction
 
-- transforms
-- clipping
-- atan
-- projection transition
-- subdivision
-- clipping
-- symbols
-- circles
-- controls
+When implementing globe, we noticed that globe projection did not match mercator projection
+after the automatic transition described in previous section.
+This mismatch was very visible at certain latitudes, the globe map was shifted north/south by hundreds of meters,
+but at other latitudes the shift was much smaller. This behavior was also inconsistent - one would
+expect the shift to gradually increase or decrease with distance from equator, but that was not the case.
 
+Eventually, we tracked this down to an issue in the projection shader, specifically the `atan` function.
+On some GPU vendors, the function is inaccurate in a way that matches the observed projection shifts.
 
+To combat this, every second we draw a 1x1 pixel framebuffer and store the `atan` value
+for the current latitude, asynchronously download the pixel's value, compare it with `Math.atan`
+reference, and shift the globe projection matrix to compensate.
+This approach works, because the error is continuous and doesn't change too quickly with latitude.
 
+This approach also has the advantage that it works regardless of the actual error of the `atan`,
+so MapLibre should work fine even if it runs on some new GPU in the future with different
+`atan` inaccuracies.
+
+## Clipping
+
+When drawing a planet, we need to somehow clip the geometry that is on its backfacing side.
+Usually this would be simple, but TODO platí tohle ještě?
+
+## Symbols
+
+TODO
+
+## Circles
+
+TODO
+
+## Transformations and unprojections
+
+TODO
+
+## Controls
+
+TODO
