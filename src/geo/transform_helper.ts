@@ -41,7 +41,12 @@ export type UnwrappedTileIDType = {
     };
 };
 
-export type CustomLayerArgs = {
+export type CustomLayerArgsTransformSpecific = {
+    getMatrixForModel(location: LngLatLike, altitude?: number): mat4;
+    getMercatorTileProjectionMatrix(unwrappedTile: UnwrappedTileIDType): mat4;
+};
+
+export type CustomLayerArgs = CustomLayerArgsTransformSpecific & {
     farZ: number;
     nearZ: number;
     fov: number; // In radians
@@ -54,8 +59,6 @@ export type CustomLayerArgs = {
     };
     uniforms: {[key: string]: number | Array<number>};
     getSubdivisionForZoomLevel(z: number): number;
-    getMatrixForModel(location: LngLatLike, altitude?: number): mat4;
-    getMercatorTileProjectionMatrix(unwrappedTile: UnwrappedTileIDType): mat4;
 };
 
 export type TransformHelperCallbacks = {

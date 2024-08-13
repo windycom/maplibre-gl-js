@@ -161,13 +161,16 @@
                         x: current.x * 2 + x,
                         y: current.y * 2 + y,
                         z: current.z + 1,
+                        wrap: current.wrap,
                     });
                 }
             }
         }
     }
     const tilesToRender = [];
-    generateTileList(tilesToRender, {x: 0, y: 0, z: 0});
+    for (let i = -1; i <= 1; i++) {
+        generateTileList(tilesToRender, {x: 0, y: 0, z: 0, wrap: i});
+    }
 
     fetch('https://demotiles.maplibre.org/style.json').then(response => response.json()).then(fetchedStyle => {
         fetchedStyle['projection'] = {'type': 'globe'}; // Modify the fetched style before creating the map so that it already starts with globe projection.
@@ -177,7 +180,7 @@
             style: fetchedStyle,
             zoom: 2,
             center: [7.5, 58],
-            antialias: true,
+            antialias: false,
         });
 
         document.getElementById('project').addEventListener('click', () => {
@@ -211,6 +214,9 @@
                 }
 
                 // Create GLSL source for vertex shader
+                // Note: we pass in-tile position in range 0..EXTENT to projectTile.
+                // By default the uniforms for custom layers are set up so that "projectTile" accepts mercator coordinates in range 0..1,
+                // but in this example we set the uniforms ourselves to accept range 0..EXTENT just like regular MapLibre rendering.
                 const vertexSource = `#version 300 es
                 ${shaderDescription.vertexShaderPrelude}
                 ${shaderDescription.define}
@@ -219,8 +225,10 @@
                 out mediump vec2 v_pos;
 
                 void main() {
-                    gl_Position = projectTile(a_pos); // Note: we pass in-tile position in range 0..EXTENT to projectTile
-                    v_pos = a_pos / float(${EXTENT}); // We divide by EXTENT here just so we have something reasonable to display in the pixel shader.
+                    
+                    gl_Position = projectTile(a_pos);
+                    // We divide by EXTENT here just so we have something reasonable to display in the pixel shader.
+                    v_pos = a_pos / float(${EXTENT});
                 }`;
 
                 // create GLSL source for fragment shader
@@ -286,28 +294,19 @@
             },
 
             // method fired on each animation frame
-            render (gl, matrix, args) {
+            render (gl, _matrix, args) {
                 const {program, locations} = this.getShader(gl, args.shader);
 
                 const isBorderDemo = true;
 
                 gl.disable(gl.DEPTH_TEST);
                 gl.disable(gl.STENCIL_TEST);
+                gl.disable(gl.CULL_FACE);
                 gl.enable(gl.BLEND);
                 gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
 
                 gl.useProgram(program);
-                gl.uniformMatrix4fv(
-                    locations['u_matrix'],
-                    false,
-                    matrix
-                );
 
-                gl.uniformMatrix4fv(
-                    locations['u_projection_matrix'],
-                    false,
-                    args.uniforms.u_projection_matrix
-                );
                 gl.uniform4f(
                     locations['u_projection_clipping_plane'],
                     ...args.uniforms.u_projection_clipping_plane
@@ -317,7 +316,13 @@
                     args.uniforms.u_projection_transition
                 );
 
+                const isGlobeProjection = args.shader.variantName === 'globe';
+
                 for (const tile of tilesToRender) {
+                    if (isGlobeProjection && tile.wrap !== 0) {
+                        continue; // No need to draw wrapped tiles on a globe.
+                    }
+
                     // Set tile mercator extents accordingly
                     const tileSize = 1.0 / (1 << tile.z);
                     gl.uniform4f(
@@ -327,17 +332,38 @@
                         tileSize / EXTENT, // mercator size (also divide by tile extent)
                         tileSize / EXTENT  // mercator size
                     );
-                    gl.uniformMatrix4fv(
-                        locations['u_projection_fallback_matrix'],
-                        false,
-                        args.getMercatorTileProjectionMatrix({
-                            wrap: 0,
+
+                    const mercatorTileProjectionMatrixArray = [
+                        ...args.getMercatorTileProjectionMatrix({
+                            wrap: tile.wrap,
                             canonical: {
                                 x: tile.x,
                                 y: tile.y,
                                 z: tile.z,
                             }
-                        })
+                        }).values()
+                    ];
+
+                    // Shader variant name effectively tells us what projection code path should be used.
+                    if (isGlobeProjection) {
+                        // Pass regular globe projection matrix for globe (same for every tile)...
+                        gl.uniformMatrix4fv(
+                            locations['u_projection_matrix'],
+                            false,
+                            args.uniforms.u_projection_matrix
+                        );
+                    } else {
+                        // ...or pass tile-specific projection matrix for mercator.
+                        gl.uniformMatrix4fv(
+                            locations['u_projection_matrix'],
+                            false,
+                            mercatorTileProjectionMatrixArray
+                        );
+                    }
+                    gl.uniformMatrix4fv(
+                        locations['u_projection_fallback_matrix'],
+                        false,
+                        mercatorTileProjectionMatrixArray
                     );
                     const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
                     gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);

@@ -6,6 +6,9 @@ import type {SourceCache} from '../source/source_cache';
 import type {CustomStyleLayer} from '../style/style_layer/custom_style_layer';
 import {OverscaledTileID} from '../source/tile_id';
 import {CustomLayerArgs} from '../geo/transform_helper';
+import {createMat4f64} from '../util/util';
+import {mat4} from 'gl-matrix';
+import {EXTENT} from '../data/extent';
 
 export function drawCustom(painter: Painter, sourceCache: SourceCache, layer: CustomStyleLayer) {
 
@@ -15,6 +18,17 @@ export function drawCustom(painter: Painter, sourceCache: SourceCache, layer: Cu
     const transform = painter.transform;
 
     const projectionData = transform.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
+
+    // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
+    // the shader projection machinery still expects inputs to be in tile units range [0..EXTENT].
+    // Since custom layers are expected to supply mercator coordinates [0..1], we need to rescale
+    // the fallback projection matrix by EXTENT.
+    // Note that the regular projection matrices do not need to be modified, since the rescaling happens by setting
+    // the `u_projection_tile_mercator_coords` uniform correctly later.
+    const fallbackMatrixScaled = createMat4f64();
+    mat4.scale(fallbackMatrixScaled, projectionData.u_projection_fallback_matrix, [EXTENT, EXTENT, 1]);
+
+    const transformArgs = transform.getCustomLayerArgs();
 
     const customLayerArgs: CustomLayerArgs = {
         farZ: transform.farZ,
@@ -35,15 +49,16 @@ export function drawCustom(painter: Painter, sourceCache: SourceCache, layer: Cu
             'u_projection_tile_mercator_coords': [0, 0, 1, 1],
             'u_projection_clipping_plane': [...projectionData.u_projection_clipping_plane.values()],
             'u_projection_transition': projectionData.u_projection_transition,
-            'u_projection_fallback_matrix': [...projectionData.u_projection_fallback_matrix.values()], // should be filled in by transform or by custom layer
+            'u_projection_fallback_matrix': [...fallbackMatrixScaled.values()],
         },
         // The following should be filled in by the transform.
-        getSubdivisionForZoomLevel: null,
-        getMatrixForModel: null,
-        getMercatorTileProjectionMatrix: null,
+        getSubdivisionForZoomLevel: (zoomLevel): number => {
+            return projection.subdivisionGranularity.tile.getGranularityForZoomLevel(zoomLevel);
+        },
+        getMatrixForModel: transformArgs.getMatrixForModel,
+        getMercatorTileProjectionMatrix: transformArgs.getMercatorTileProjectionMatrix,
     };
 
-    transform.fillCustomLayerArgs(customLayerArgs);
     const customLayerMatrix = transform.customLayerMatrix();
 
     if (painter.renderPass === 'offscreen') {

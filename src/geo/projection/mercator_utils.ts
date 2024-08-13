@@ -3,7 +3,7 @@ import {ProjectionData} from '../../render/program/projection_program';
 import {EXTENT} from '../../data/extent';
 import {OverscaledTileID} from '../../source/tile_id';
 import {clamp} from '../../util/util';
-import {MAX_VALID_LATITUDE} from '../transform_helper';
+import {MAX_VALID_LATITUDE, UnwrappedTileIDType, zoomScale} from '../transform_helper';
 import {LngLat} from '../lng_lat';
 import {MercatorCoordinate, mercatorXfromLng, mercatorYfromLat} from '../mercator_coordinate';
 import Point from '@mapbox/point-geometry';
@@ -118,4 +118,15 @@ export function getBasicProjectionData(overscaledTileID: OverscaledTileID, tileP
     };
 
     return data;
+}
+
+export function calculateTileMatrix(unwrappedTileID: UnwrappedTileIDType, worldSize: number): mat4 {
+    const canonical = unwrappedTileID.canonical;
+    const scale = worldSize / zoomScale(canonical.z);
+    const unwrappedX = canonical.x + Math.pow(2, canonical.z) * unwrappedTileID.wrap;
+
+    const worldMatrix = mat4.identity(new Float64Array(16) as any);
+    mat4.translate(worldMatrix, worldMatrix, [unwrappedX * scale, canonical.y * scale, 0]);
+    mat4.scale(worldMatrix, worldMatrix, [scale / EXTENT, scale / EXTENT, 1]);
+    return worldMatrix;
 }

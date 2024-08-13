@@ -1,5 +1,5 @@
 import {mat2, mat4, vec2, vec3, vec4} from 'gl-matrix';
-import {MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
+import {CustomLayerArgsTransformSpecific, MAX_VALID_LATITUDE, TransformHelper} from '../transform_helper';
 import {MercatorTransform} from './mercator_transform';
 import {LngLat, LngLatLike, earthRadius} from '../lng_lat';
 import {angleToRotateBetweenVectors2D, clamp, createIdentityMat4f64, createMat4f64, createVec3f64, createVec4f64, differenceOfAnglesDegrees, distanceOfAnglesRadians, easeCubicInOut, lerp, pointPlaneSignedDistance, warnOnce} from '../../util/util';
@@ -245,7 +245,7 @@ export class GlobeTransform implements ITransform {
     private _globeProjectionAllowed = true;
 
     /**
-     * Note: projection instance should only be accessed in the {@link newFrameUpdate} function
+     * Note: projection instance should only be accessed in the {@link newFrameUpdate} function.
      * to ensure the transform's state isn't unintentionally changed.
      */
     private _projectionInstance: GlobeProjection;
@@ -1343,41 +1343,9 @@ export class GlobeTransform implements ITransform {
         return this._globeRendering ? this.modelViewProjectionMatrix : this._mercatorTransform.customLayerMatrix();
     }
 
-    getCustomLayerArgs() {
+    getCustomLayerArgs(): CustomLayerArgsTransformSpecific {
         const mercatorArgs = this._mercatorTransform.getCustomLayerArgs();
-        const projectionData = this.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
-        // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
-        // the shader projection machinery still expects inputs to be in tile units range [0..EXTENT].
-        // Since custom layers are expected to supply mercator coordinates [0..1], we need to rescale
-        // the fallback projection matrix by EXTENT.
-        // Note that the regular globe projection matrix does not need to be modified, since the rescaling happens by setting
-        // the `u_projection_tile_mercator_coords` uniform correctly later.
-        const fallbackMatrixScaled = createMat4f64();
-        mat4.scale(fallbackMatrixScaled, projectionData.u_projection_fallback_matrix, [EXTENT, EXTENT, 1]);
         return {
-            farZ: this.farZ,
-            nearZ: this.nearZ,
-            fov: this.fov * Math.PI / 180, // fov converted to radians
-            modelViewProjectionMatrix: this.modelViewProjectionMatrix,
-            projectionMatrix: this.projectionMatrix,
-            shader: {
-                variantName: this._projectionInstance.shaderVariantName,
-                vertexShaderPrelude: `const float PI = 3.141592653589793;\nuniform mat4 u_projection_matrix;\n${this._projectionInstance.shaderPreludeCode.vertexSource}`,
-                define: this._projectionInstance.shaderDefine,
-            },
-            // Convert all uniforms to plain arrays
-            uniforms: {
-                'u_projection_matrix': [...projectionData.u_projection_matrix.values()],
-                // This next uniform is used to convert from [0..EXTENT] to [0..1] mercator coordinates for a given tile,
-                // but since custom layers are expected to already supply mercator coordinates, it is set to identity (offset 0,0 and scale 1,1).
-                'u_projection_tile_mercator_coords': [0, 0, 1, 1],
-                'u_projection_clipping_plane': [...projectionData.u_projection_clipping_plane.values()],
-                'u_projection_transition': projectionData.u_projection_transition,
-                'u_projection_fallback_matrix': [...fallbackMatrixScaled.values()],
-            },
-            getSubdivisionForZoomLevel: (z: number) => {
-                return this._projectionInstance.subdivisionGranularity.tile.getGranularityForZoomLevel(z);
-            },
             getMatrixForModel: (location: LngLatLike, altitude?: number) => {
                 if (!this._globeRendering) {
                     return mercatorArgs.getMatrixForModel(location, altitude);
@@ -1393,6 +1361,7 @@ export class GlobeTransform implements ITransform {
                 mat4.scale(m, m, [scale, scale, scale]);
                 return m;
             },
+            getMercatorTileProjectionMatrix: mercatorArgs.getMercatorTileProjectionMatrix,
         };
     }
 }
