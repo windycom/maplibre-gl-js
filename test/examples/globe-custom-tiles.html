@@ -172,213 +172,218 @@
         generateTileList(tilesToRender, {x: 0, y: 0, z: 0, wrap: i});
     }
 
-    fetch('https://demotiles.maplibre.org/style.json').then(response => response.json()).then(fetchedStyle => {
-        fetchedStyle['projection'] = {'type': 'globe'}; // Modify the fetched style before creating the map so that it already starts with globe projection.
-        fetchedStyle['sky'] = {'atmosphere-blend': 0.0}; // Disable sky.
-        const map = new maplibregl.Map({
-            container: 'map',
-            style: fetchedStyle,
-            zoom: 2,
-            center: [7.5, 58],
-            antialias: false,
+    const map = new maplibregl.Map({
+        container: 'map',
+        style: 'https://demotiles.maplibre.org/style.json',
+        zoom: 2,
+        center: [7.5, 58],
+        antialias: false,
+    });
+
+    map.on('style.load', () => {
+        map.setProjection({
+            type: 'globe', // Set projection to globe
         });
-
-        document.getElementById('project').addEventListener('click', () => {
-            // Toggle projection
-            const currentProjection = map.getProjection();
-            map.setProjection({
-                type: currentProjection.type === 'globe' ? 'mercator' : 'globe',
-            });
+        map.setSky({
+            'atmosphere-blend': 0.0, // Disable sky
         });
+    });
 
-        const uniforms = [
-            'u_matrix',
-            'u_projection_fallback_matrix',
-            'u_projection_matrix',
-            'u_projection_clipping_plane',
-            'u_projection_transition',
-            'u_projection_tile_mercator_coords',
-        ];
+    document.getElementById('project').addEventListener('click', () => {
+        // Toggle projection
+        const currentProjection = map.getProjection();
+        map.setProjection({
+            type: currentProjection.type === 'globe' ? 'mercator' : 'globe',
+        });
+    });
 
-        // create a custom style layer to implement the WebGL content
-        const highlightLayer = {
-            id: 'highlight',
-            type: 'custom',
-            shaderMap: new Map(),
-            meshMap: new Map(),
+    const uniforms = [
+        'u_matrix',
+        'u_projection_fallback_matrix',
+        'u_projection_matrix',
+        'u_projection_clipping_plane',
+        'u_projection_transition',
+        'u_projection_tile_mercator_coords',
+    ];
 
-            // Helper method for creating a shader based on current map projection - globe will automatically switch to mercator when some condition is fulfilled.
-            getShader(gl, shaderDescription) {
-                if (this.shaderMap.has(shaderDescription.variantName)) {
-                    return this.shaderMap.get(shaderDescription.variantName);
-                }
+    // create a custom style layer to implement the WebGL content
+    const highlightLayer = {
+        id: 'highlight',
+        type: 'custom',
+        shaderMap: new Map(),
+        meshMap: new Map(),
 
-                // Create GLSL source for vertex shader
-                // Note: we pass in-tile position in range 0..EXTENT to projectTile.
-                // By default the uniforms for custom layers are set up so that "projectTile" accepts mercator coordinates in range 0..1,
-                // but in this example we set the uniforms ourselves to accept range 0..EXTENT just like regular MapLibre rendering.
-                const vertexSource = `#version 300 es
-                ${shaderDescription.vertexShaderPrelude}
-                ${shaderDescription.define}
+        // Helper method for creating a shader based on current map projection - globe will automatically switch to mercator when some condition is fulfilled.
+        getShader(gl, shaderDescription) {
+            if (this.shaderMap.has(shaderDescription.variantName)) {
+                return this.shaderMap.get(shaderDescription.variantName);
+            }
+
+            // Create GLSL source for vertex shader
+            // Note: we pass in-tile position in range 0..EXTENT to projectTile.
+            // By default the uniforms for custom layers are set up so that "projectTile" accepts mercator coordinates in range 0..1,
+            // but in this example we set the uniforms ourselves to accept range 0..EXTENT just like regular MapLibre rendering.
+            const vertexSource = `#version 300 es
+            ${shaderDescription.vertexShaderPrelude}
+            ${shaderDescription.define}
+            
+            in vec2 a_pos;
+            out mediump vec2 v_pos;
+
+            void main() {
                 
-                in vec2 a_pos;
-                out mediump vec2 v_pos;
+                gl_Position = projectTile(a_pos);
+                // We divide by EXTENT here just so we have something reasonable to display in the pixel shader.
+                v_pos = a_pos / float(${EXTENT});
+            }`;
 
-                void main() {
-                    
-                    gl_Position = projectTile(a_pos);
-                    // We divide by EXTENT here just so we have something reasonable to display in the pixel shader.
-                    v_pos = a_pos / float(${EXTENT});
-                }`;
+            // create GLSL source for fragment shader
+            const fragmentSource = `#version 300 es
 
-                // create GLSL source for fragment shader
-                const fragmentSource = `#version 300 es
+            precision mediump float;
 
-                precision mediump float;
+            in vec2 v_pos;
 
-                in vec2 v_pos;
+            out highp vec4 fragColor;
+            void main() {
+                float alpha = 0.5;
+                fragColor = vec4(v_pos, 0.0, 1.0) * alpha;
+            }`;
 
-                out highp vec4 fragColor;
-                void main() {
-                    float alpha = 0.5;
-                    fragColor = vec4(v_pos, 0.0, 1.0) * alpha;
-                }`;
+            // create a vertex shader
+            const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+            gl.shaderSource(vertexShader, vertexSource);
+            gl.compileShader(vertexShader);
 
-                // create a vertex shader
-                const vertexShader = gl.createShader(gl.VERTEX_SHADER);
-                gl.shaderSource(vertexShader, vertexSource);
-                gl.compileShader(vertexShader);
+            // create a fragment shader
+            const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+            gl.shaderSource(fragmentShader, fragmentSource);
+            gl.compileShader(fragmentShader);
 
-                // create a fragment shader
-                const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
-                gl.shaderSource(fragmentShader, fragmentSource);
-                gl.compileShader(fragmentShader);
+            // link the two shaders into a WebGL program
+            const program = gl.createProgram();
+            gl.attachShader(program, vertexShader);
+            gl.attachShader(program, fragmentShader);
+            gl.linkProgram(program);
 
-                // link the two shaders into a WebGL program
-                const program = gl.createProgram();
-                gl.attachShader(program, vertexShader);
-                gl.attachShader(program, fragmentShader);
-                gl.linkProgram(program);
+            this.aPos = gl.getAttribLocation(program, 'a_pos');
 
-                this.aPos = gl.getAttribLocation(program, 'a_pos');
+            const locations = {};
 
-                const locations = {};
+            for (const uniform of uniforms) {
+                locations[uniform] = gl.getUniformLocation(program, uniform);
+            }
 
-                for (const uniform of uniforms) {
-                    locations[uniform] = gl.getUniformLocation(program, uniform);
+            this.shaderMap.set(shaderDescription.variantName, {
+                program,
+                locations
+            });
+
+            return program;
+        },
+
+        getTileMesh(gl, args, x, y, z, border) {
+            const granularity = args.getSubdivisionForZoomLevel(z);
+            const north = y === 0;
+            const south = y === (1 << z) - 1;
+            const key = `${granularity}_${north}_${south}_${border}`;
+            if (this.meshMap.has(key)) {
+                return this.meshMap.get(key);
+            }
+            const mesh = createTileMesh(gl, granularity, border, north, south);
+            this.meshMap.set(key, mesh);
+            return mesh;
+        },
+
+        onAdd (map, gl) {
+            // Nothing to do.
+        },
+
+        // method fired on each animation frame
+        render (gl, _matrix, args) {
+            const {program, locations} = this.getShader(gl, args.shader);
+
+            const isBorderDemo = true;
+
+            gl.disable(gl.DEPTH_TEST);
+            gl.disable(gl.STENCIL_TEST);
+            gl.disable(gl.CULL_FACE);
+            gl.enable(gl.BLEND);
+            gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+            gl.useProgram(program);
+
+            gl.uniform4f(
+                locations['u_projection_clipping_plane'],
+                ...args.uniforms.u_projection_clipping_plane
+            );
+            gl.uniform1f(
+                locations['u_projection_transition'],
+                args.uniforms.u_projection_transition
+            );
+
+            const isGlobeProjection = args.shader.variantName === 'globe';
+
+            for (const tile of tilesToRender) {
+                if (isGlobeProjection && tile.wrap !== 0) {
+                    continue; // No need to draw wrapped tiles on a globe.
                 }
 
-                this.shaderMap.set(shaderDescription.variantName, {
-                    program,
-                    locations
-                });
-
-                return program;
-            },
-
-            getTileMesh(gl, args, x, y, z, border) {
-                const granularity = args.getSubdivisionForZoomLevel(z);
-                const north = y === 0;
-                const south = y === (1 << z) - 1;
-                const key = `${granularity}_${north}_${south}_${border}`;
-                if (this.meshMap.has(key)) {
-                    return this.meshMap.get(key);
-                }
-                const mesh = createTileMesh(gl, granularity, border, north, south);
-                this.meshMap.set(key, mesh);
-                return mesh;
-            },
-
-            onAdd (map, gl) {
-                // Nothing to do.
-            },
-
-            // method fired on each animation frame
-            render (gl, _matrix, args) {
-                const {program, locations} = this.getShader(gl, args.shader);
-
-                const isBorderDemo = true;
-
-                gl.disable(gl.DEPTH_TEST);
-                gl.disable(gl.STENCIL_TEST);
-                gl.disable(gl.CULL_FACE);
-                gl.enable(gl.BLEND);
-                gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-
-                gl.useProgram(program);
-
+                // Set tile mercator extents accordingly
+                const tileSize = 1.0 / (1 << tile.z);
                 gl.uniform4f(
-                    locations['u_projection_clipping_plane'],
-                    ...args.uniforms.u_projection_clipping_plane
+                    locations['u_projection_tile_mercator_coords'],
+                    tile.x * tileSize, // mercator offset X
+                    tile.y * tileSize, // mercator offset Y
+                    tileSize / EXTENT, // mercator size (also divide by tile extent)
+                    tileSize / EXTENT  // mercator size
                 );
-                gl.uniform1f(
-                    locations['u_projection_transition'],
-                    args.uniforms.u_projection_transition
-                );
 
-                const isGlobeProjection = args.shader.variantName === 'globe';
+                const mercatorTileProjectionMatrixArray = [
+                    ...args.getMercatorTileProjectionMatrix({
+                        wrap: tile.wrap,
+                        canonical: {
+                            x: tile.x,
+                            y: tile.y,
+                            z: tile.z,
+                        }
+                    }).values()
+                ];
 
-                for (const tile of tilesToRender) {
-                    if (isGlobeProjection && tile.wrap !== 0) {
-                        continue; // No need to draw wrapped tiles on a globe.
-                    }
-
-                    // Set tile mercator extents accordingly
-                    const tileSize = 1.0 / (1 << tile.z);
-                    gl.uniform4f(
-                        locations['u_projection_tile_mercator_coords'],
-                        tile.x * tileSize, // mercator offset X
-                        tile.y * tileSize, // mercator offset Y
-                        tileSize / EXTENT, // mercator size (also divide by tile extent)
-                        tileSize / EXTENT  // mercator size
-                    );
-
-                    const mercatorTileProjectionMatrixArray = [
-                        ...args.getMercatorTileProjectionMatrix({
-                            wrap: tile.wrap,
-                            canonical: {
-                                x: tile.x,
-                                y: tile.y,
-                                z: tile.z,
-                            }
-                        }).values()
-                    ];
-
-                    // Shader variant name effectively tells us what projection code path should be used.
-                    if (isGlobeProjection) {
-                        // Pass regular globe projection matrix for globe (same for every tile)...
-                        gl.uniformMatrix4fv(
-                            locations['u_projection_matrix'],
-                            false,
-                            args.uniforms.u_projection_matrix
-                        );
-                    } else {
-                        // ...or pass tile-specific projection matrix for mercator.
-                        gl.uniformMatrix4fv(
-                            locations['u_projection_matrix'],
-                            false,
-                            mercatorTileProjectionMatrixArray
-                        );
-                    }
+                // Shader variant name effectively tells us what projection code path should be used.
+                if (isGlobeProjection) {
+                    // Pass regular globe projection matrix for globe (same for every tile)...
                     gl.uniformMatrix4fv(
-                        locations['u_projection_fallback_matrix'],
+                        locations['u_projection_matrix'],
+                        false,
+                        args.uniforms.u_projection_matrix
+                    );
+                } else {
+                    // ...or pass tile-specific projection matrix for mercator.
+                    gl.uniformMatrix4fv(
+                        locations['u_projection_matrix'],
                         false,
                         mercatorTileProjectionMatrixArray
                     );
-                    const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
-                    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
-                    gl.enableVertexAttribArray(this.aPos);
-                    gl.vertexAttribPointer(this.aPos, 2, gl.SHORT, false, 0, 0);
-                    gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
                 }
+                gl.uniformMatrix4fv(
+                    locations['u_projection_fallback_matrix'],
+                    false,
+                    mercatorTileProjectionMatrixArray
+                );
+                const mesh = this.getTileMesh(gl, args, tile.x, tile.y, tile.z, false);
+                gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+                gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+                gl.enableVertexAttribArray(this.aPos);
+                gl.vertexAttribPointer(this.aPos, 2, gl.SHORT, false, 0, 0);
+                gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
             }
-        };
+        }
+    };
 
-        // add the custom style layer to the map
-        map.on('load', () => {
-            map.addLayer(highlightLayer);
-        });
+    // add the custom style layer to the map
+    map.on('load', () => {
+        map.addLayer(highlightLayer);
     });
 </script>
 </body>
