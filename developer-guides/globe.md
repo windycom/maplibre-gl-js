@@ -26,7 +26,7 @@ changing zoom level along with latitude changes.
 
 This behavior is completely automatic and transparent to the user.
 The only case when the user needs to be aware of this is when
-programatically triggering animations such as `flyTo` and `easeTo`
+programmatically triggering animations such as `flyTo` and `easeTo`
 and using them to both change the map center's latitude and *at the same time*
 changing the map's zoom to an amount based on the map's starting zoom.
 The example `globe-zoom-planet-size-function.html` demonstrates how to
@@ -130,7 +130,7 @@ When drawing a planet, we need to somehow clip the geometry that is on its backf
 Since MapLibre uses the Z-buffer for optimizing transparency drawing, filling it with custom
 values, we cannot use it for this purpose.
 
-Instead, we compute a plane that intersects the hozirons, and for each vertex
+Instead, we compute a plane that intersects the horizons, and for each vertex
 we compute the distance from this plane and store it in `gl_Position.z`.
 This forces the GPU's clipping hardware to clip geometry beyond the planet's horizon.
 This does not affect MapLibre's custom Z values, since they are set later using
@@ -152,7 +152,7 @@ near the edges can cause seams, especially in cases when two tiles of different
 zoom levels are next to each other.
 
 To make sure that there are both no seams and that every pixel is covered by
-valid tile texture (as opposed to a stretched border of a neighbouring tile),
+valid tile texture (as opposed to a stretched border of a neighboring tile),
 we first draw all tiles *without* border, marking all drawn pixels in stencil.
 Then, we draw all tiles *with* borders, but set stencil to discard all pixels
 that were drawn in the first pass.
@@ -167,7 +167,7 @@ MapLibre computed well-fitting bounding boxes even for curved symbols under glob
 by computing the AABB from a projection of the symbol's box' corners and box edge midpoints.
 This is an approximation, but works well in practice. 
 
-## Transformations and unprojections
+## Transformations and unprojection
 
 Most projection and unprojection functions from `ITransform` are adapted for globe,
 with some caveats.
@@ -183,10 +183,10 @@ as well as camera animations such as `flyTo` and `easeTo`.
 
 Specifically, when zooming, the location under the cursor stays under the cursor,
 just like it does on a mercator map.
-However this behaviour has some limitations on the globe.
+However this behavior has some limitations on the globe.
 In some scenarios, such as zooming to the edge of the planet,
 this way of zooming would result in rapid and unpleasant map panning.
-Thus this behaviour is slowly faded out at low zooms and replaced with an approximation.
+Thus this behavior is slowly faded out at low zooms and replaced with an approximation.
 
 There are also other edge cases, such as when looking at the planet's poles
 and trying to zoom in to a location that is on the other hemisphere ("behind the pole").
@@ -194,4 +194,4 @@ MapLibre does not support moving the camera across poles, so instead we need to 
 In this case, an approximation instead of exact zooming is used as well.
 
 Globe controls also use panning inertia, just like mercator.
-Special care was taken to keep the movement speed of inertia consitent.
+Special care was taken to keep the movement speed of inertia consistent.
