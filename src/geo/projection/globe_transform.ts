@@ -13,7 +13,7 @@ import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {CoveringTilesOptions, CoveringZoomOptions, IReadonlyTransform, ITransform, TransformUpdateResult} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
-import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
+import {tileCoordinatesToLocation, tileCoordinatesToMercatorCoordinates} from './mercator_utils';
 import {angularCoordinatesRadiansToVector, angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
 import {EXTENT} from '../../data/extent';
 import type {ProjectionData} from './projection_data';
@@ -301,8 +301,6 @@ export class GlobeTransform implements ITransform {
 
     public get inverseProjectionMatrix(): mat4 { return this._globeRendering ? this._globeProjMatrixInverted : this._mercatorTransform.inverseProjectionMatrix; }
 
-    public get useGlobeControls(): boolean { return this._globeRendering; }
-
     public get cameraPosition(): vec3 {
         // Return a copy - don't let outside code mutate our precomputed camera position.
         const copy = createVec3f64(); // Ensure the resulting vector is float64s
@@ -535,6 +533,14 @@ export class GlobeTransform implements ITransform {
         return !this.isSurfacePointVisible(angularCoordinatesToSurfaceVector(location));
     }
 
+    public tileCoordinatesOccluded(inTileX: number, inTileY: number, canonicalTileID: {x: number; y: number; z: number}): boolean {
+        if (!this._globeRendering) {
+            return this._mercatorTransform.tileCoordinatesOccluded(inTileX, inTileY, canonicalTileID);
+        }
+        const location = tileCoordinatesToLocation(inTileX, inTileY, canonicalTileID);
+        return !this.isSurfacePointVisible(angularCoordinatesToSurfaceVector(location));
+    }
+
     public transformLightDirection(dir: vec3): vec3 {
         const sphereX = this._helper._center.lng * Math.PI / 180.0;
         const sphereY = this._helper._center.lat * Math.PI / 180.0;
@@ -575,11 +581,11 @@ export class GlobeTransform implements ITransform {
         return Math.cos(this.getAnimatedLatitude() * Math.PI / 180);
     }
 
-    public getPitchedTextCorrection(textAnchor: Point, tileID: UnwrappedTileID): number {
+    public getPitchedTextCorrection(textAnchorX: number, textAnchorY: number, tileID: UnwrappedTileID): number {
         if (!this._globeRendering) {
             return 1.0;
         }
-        const mercator = tileCoordinatesToMercatorCoordinates(textAnchor.x, textAnchor.y, tileID.canonical);
+        const mercator = tileCoordinatesToMercatorCoordinates(textAnchorX, textAnchorY, tileID.canonical);
         const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
         return this.getCircleRadiusCorrection() / Math.cos(angular[1]);
     }
@@ -1293,5 +1299,9 @@ export class GlobeTransform implements ITransform {
 
         projectionData.fallbackMatrix = fallbackMatrixScaled;
         return projectionData;
+    }
+
+    getFastPathSimpleProjectionMatrix(_tileID: OverscaledTileID): undefined {
+        return undefined;
     }
 }

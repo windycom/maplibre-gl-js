@@ -227,7 +227,6 @@ export class MercatorTransform implements ITransform {
     public get projectionMatrix(): mat4 { return this._projectionMatrix; }
     public get modelViewProjectionMatrix(): mat4 { return this._viewProjMatrix; }
     public get inverseProjectionMatrix(): mat4 { return this._invProjMatrix; }
-    public get useGlobeControls(): boolean { return false; }
     public get nearZ(): number { return this._nearZ; }
     public get farZ(): number { return this._farZ; }
 
@@ -383,7 +382,7 @@ export class MercatorTransform implements ITransform {
      * @param tileID - the tile ID
      */
     calculatePosMatrix(tileID: UnwrappedTileID | OverscaledTileID, aligned: boolean = false): mat4 {
-        const posMatrixKey = calculateTileKey(tileID.wrap, tileID.canonical.z, tileID.canonical.z, tileID.canonical.x, tileID.canonical.y);
+        const posMatrixKey = tileID.key ?? calculateTileKey(tileID.wrap, tileID.canonical.z, tileID.canonical.z, tileID.canonical.x, tileID.canonical.y);
         const cache = aligned ? this._alignedPosMatrixCache : this._posMatrixCache;
         if (cache[posMatrixKey]) {
             return cache[posMatrixKey];
@@ -677,6 +676,10 @@ export class MercatorTransform implements ITransform {
         return false;
     }
 
+    tileCoordinatesOccluded(_inTileX: number, _inTileY: number, _canonicalTileID: {x: number; y: number; z: number}): boolean {
+        return false;
+    }
+
     getPixelScale(): number {
         return 1.0;
     }
@@ -685,7 +688,7 @@ export class MercatorTransform implements ITransform {
         return 1.0;
     }
 
-    getPitchedTextCorrection(_textAnchor: Point, _tileID: UnwrappedTileID): number {
+    getPitchedTextCorrection(_textAnchorX: number, _textAnchorY: number, _tileID: UnwrappedTileID): number {
         return 1.0;
     }
 
@@ -765,5 +768,9 @@ export class MercatorTransform implements ITransform {
         projectionData.fallbackMatrix = fallbackMatrixScaled;
         projectionData.mainMatrix = projectionMatrixScaled;
         return projectionData;
+    }
+
+    getFastPathSimpleProjectionMatrix(tileID: OverscaledTileID): mat4 {
+        return this.calculatePosMatrix(tileID);
     }
 }
