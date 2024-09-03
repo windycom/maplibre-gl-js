@@ -74,7 +74,7 @@ export default class SymbolCollisionBox extends Benchmark {
                     rndRange(-20, 20)
                 ],
                 shift: rng() > 0.5 ? new Point(rndRange(-20, 20), rndRange(-20, 20)) : undefined,
-                simpleProjectionMatrix: tr.calculatePosMatrix(unwrappedTileID),
+                simpleProjectionMatrix: tr.calculatePosMatrix(unwrappedTileID, false),
             });
         }
     }

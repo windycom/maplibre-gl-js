@@ -197,8 +197,8 @@ export class MercatorTransform implements ITransform {
     private _fogMatrix: mat4;
 
     private _posMatrixCache: {[_: string]: mat4};
-    private _fogMatrixCache: {[_: string]: mat4};
     private _alignedPosMatrixCache: {[_: string]: mat4};
+    private _fogMatrixCache: {[_: string]: mat4};
 
     private _nearZ;
     private _farZ;
@@ -208,8 +208,7 @@ export class MercatorTransform implements ITransform {
             calcMatrices: () => { this._calcMatrices(); },
             getConstrained: (center, zoom) => { return this.getConstrained(center, zoom); }
         }, minZoom, maxZoom, minPitch, maxPitch, renderWorldCopies);
-        this._posMatrixCache = {};
-        this._alignedPosMatrixCache = {};
+        this._clearMatrixCaches();
     }
 
     public clone(): ITransform {
@@ -380,6 +379,7 @@ export class MercatorTransform implements ITransform {
      * Calculate the posMatrix that, given a tile coordinate, would be used to display the tile on a map.
      * This function is specific to the mercator projection.
      * @param tileID - the tile ID
+     * @param aligned - whether to use a pixel-aligned matrix variant, intended for rendering raster tiles
      */
     calculatePosMatrix(tileID: UnwrappedTileID | OverscaledTileID, aligned: boolean = false): mat4 {
         const posMatrixKey = tileID.key ?? calculateTileKey(tileID.wrap, tileID.canonical.z, tileID.canonical.z, tileID.canonical.x, tileID.canonical.y);
@@ -391,7 +391,7 @@ export class MercatorTransform implements ITransform {
         const tileMatrix = calculateTileMatrix(tileID, this.worldSize);
         mat4.multiply(tileMatrix, aligned ? this._alignedProjMatrix : this._viewProjMatrix, tileMatrix);
 
-        cache[posMatrixKey] = tileMatrix;
+        cache[posMatrixKey] = new Float32Array(tileMatrix);
         return cache[posMatrixKey];
     }
 
@@ -405,7 +405,7 @@ export class MercatorTransform implements ITransform {
         const fogMatrix = calculateTileMatrix(unwrappedTileID, this.worldSize);
         mat4.multiply(fogMatrix, this._fogMatrix, fogMatrix);
 
-        cache[posMatrixKey] = fogMatrix;
+        cache[posMatrixKey] = new Float32Array(fogMatrix);
         return cache[posMatrixKey];
     }
 
@@ -630,9 +630,13 @@ export class MercatorTransform implements ITransform {
         if (!m) throw new Error('failed to invert matrix');
         this._pixelMatrixInverse = m;
 
+        this._clearMatrixCaches();
+    }
+
+    private _clearMatrixCaches(): void {
         this._posMatrixCache = {};
-        this._fogMatrixCache = {};
         this._alignedPosMatrixCache = {};
+        this._fogMatrixCache = {};
     }
 
     maxPitchScaleFactor(): number {
@@ -746,7 +750,12 @@ export class MercatorTransform implements ITransform {
     }
 
     getProjectionDataForCustomLayer(): ProjectionData {
-        const projectionData = this.getProjectionData(new OverscaledTileID(0, 0, 0, 0, 0));
+        const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
+        const projectionData = this.getProjectionData(tileID, false, true);
+
+        const tileMatrix = calculateTileMatrix(tileID, this.worldSize);
+        mat4.multiply(tileMatrix, this._viewProjMatrix, tileMatrix);
+
         projectionData.tileMercatorCoords = [0, 0, 1, 1];
 
         // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
@@ -758,15 +767,15 @@ export class MercatorTransform implements ITransform {
         const translate: vec3 = [0, 0, this.elevation];
 
         const fallbackMatrixScaled = createMat4f64();
-        mat4.translate(fallbackMatrixScaled, projectionData.fallbackMatrix, translate);
+        mat4.translate(fallbackMatrixScaled, tileMatrix, translate);
         mat4.scale(fallbackMatrixScaled, fallbackMatrixScaled, scale);
 
         const projectionMatrixScaled = createMat4f64();
-        mat4.translate(projectionMatrixScaled, projectionData.mainMatrix, translate);
+        mat4.translate(projectionMatrixScaled, tileMatrix, translate);
         mat4.scale(projectionMatrixScaled, projectionMatrixScaled, scale);
 
-        projectionData.fallbackMatrix = fallbackMatrixScaled;
-        projectionData.mainMatrix = projectionMatrixScaled;
+        projectionData.fallbackMatrix = new Float32Array(fallbackMatrixScaled);
+        projectionData.mainMatrix = new Float32Array(projectionMatrixScaled);
         return projectionData;
     }
 
