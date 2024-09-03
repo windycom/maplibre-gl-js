@@ -774,8 +774,8 @@ export class MercatorTransform implements ITransform {
         mat4.translate(projectionMatrixScaled, tileMatrix, translate);
         mat4.scale(projectionMatrixScaled, projectionMatrixScaled, scale);
 
-        projectionData.fallbackMatrix = new Float32Array(fallbackMatrixScaled);
-        projectionData.mainMatrix = new Float32Array(projectionMatrixScaled);
+        projectionData.fallbackMatrix = fallbackMatrixScaled;
+        projectionData.mainMatrix = projectionMatrixScaled;
         return projectionData;
     }
 
