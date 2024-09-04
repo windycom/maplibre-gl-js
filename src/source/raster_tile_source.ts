@@ -1,18 +1,18 @@
-import { extend, pick } from '../util/util';
+import {extend, pick} from '../util/util';
 
-import { ImageRequest } from '../util/image_request';
+import {ImageRequest} from '../util/image_request';
 
-import { ResourceType } from '../util/request_manager';
-import { Event, ErrorEvent, Evented } from '../util/evented';
-import { loadTileJson } from './load_tilejson';
-import { TileBounds } from './tile_bounds';
-import { Texture, TextureFormat } from '../render/texture';
+import {ResourceType} from '../util/request_manager';
+import {Event, ErrorEvent, Evented} from '../util/evented';
+import {loadTileJson} from './load_tilejson';
+import {TileBounds} from './tile_bounds';
+import {Texture, TextureFormat} from '../render/texture';
 
-import type { Source } from './source';
-import type { OverscaledTileID } from './tile_id';
-import type { Map } from '../ui/map';
-import type { Dispatcher } from '../util/dispatcher';
-import type { Tile } from './tile';
+import type {Source} from './source';
+import type {OverscaledTileID} from './tile_id';
+import type {Map} from '../ui/map';
+import type {Dispatcher} from '../util/dispatcher';
+import type {Tile} from './tile';
 import type {
     RasterSourceSpecification,
     RasterDEMSourceSpecification
@@ -87,7 +87,6 @@ export class RasterTileSource extends Evented implements Source {
         extend(this, pick(options, ['url', 'scheme', 'tileSize']));
     }
 
-
     set textureFormat(format: TextureFormat) {
         this._textureFormat = format;
     }
@@ -96,7 +95,7 @@ export class RasterTileSource extends Evented implements Source {
         return this._textureFormat;
     }
 
-   async load() {
+    async load() {
         this._loaded = false;
         this.fire(new Event('dataloading', {dataType: 'source'}));
         this._tileJSONRequest = new AbortController();
