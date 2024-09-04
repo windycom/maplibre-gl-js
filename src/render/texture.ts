@@ -38,7 +38,7 @@ export class Texture {
         this.texture = context.gl.createTexture();
 
         // Pass format to the update method to enforce its usage
-        this.update(image, extend(options, {format}));
+        this.update(image, options ? extend(options, {format}) : {format});
     }
 
     /**
