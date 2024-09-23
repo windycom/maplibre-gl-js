@@ -58,9 +58,9 @@ import type {CustomLayerInterface} from './style_layer/custom_style_layer';
 import type {Validator} from './validate_style';
 import {
     MessageType,
-    type GetGlyphsParamerters,
+    type GetGlyphsParameters,
     type GetGlyphsResponse,
-    type GetImagesParamerters,
+    type GetImagesParameters,
     type GetImagesResponse
 } from '../util/actor_messages';
 import {Projection} from '../geo/projection/projection';
@@ -114,11 +114,13 @@ export type StyleSetterOptions = {
 };
 
 /**
- * Part of {@link Map#setStyle} options, transformStyle is a convenience function that allows to modify a style after it is fetched but before it is committed to the map state
- * this function exposes previous and next styles, it can be commonly used to support a range of functionalities like:
- *      when previous style carries certain 'state' that needs to be carried over to a new style gracefully
- *      when a desired style is a certain combination of previous and incoming style
- *      when an incoming style requires modification based on external state
+ * Part of {@link Map#setStyle} options, transformStyle is a convenience function that allows to modify a style after it is fetched but before it is committed to the map state.
+ *
+ * This function exposes previous and next styles, it can be commonly used to support a range of functionalities like:
+ *
+ * - when previous style carries certain 'state' that needs to be carried over to a new style gracefully;
+ * - when a desired style is a certain combination of previous and incoming style;
+ * - when an incoming style requires modification based on external state.
  *
  * @param previous - The current style.
  * @param next - The next style.
@@ -1708,7 +1710,7 @@ export class Style extends Evented {
 
     // Callbacks from web workers
 
-    async getImages(mapId: string | number, params: GetImagesParamerters): Promise<GetImagesResponse> {
+    async getImages(mapId: string | number, params: GetImagesParameters): Promise<GetImagesResponse> {
         const images = await this.imageManager.getImages(params.icons);
 
         // Apply queued image changes before setting the tile's dependencies so that the tile
@@ -1728,7 +1730,7 @@ export class Style extends Evented {
         return images;
     }
 
-    async getGlyphs(mapId: string | number, params: GetGlyphsParamerters): Promise<GetGlyphsResponse> {
+    async getGlyphs(mapId: string | number, params: GetGlyphsParameters): Promise<GetGlyphsResponse> {
         const glyphs = await this.glyphManager.getGlyphs(params.stacks);
         const sourceCache = this.sourceCaches[params.source];
         if (sourceCache) {
