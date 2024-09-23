@@ -4,6 +4,7 @@ import {LngLat} from '../lng_lat';
 import {MAX_VALID_LATITUDE, scaleZoom} from '../transform_helper';
 import Point from '@mapbox/point-geometry';
 import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
+import {EXTENT} from '../../data/extent';
 
 export function getGlobeCircumferencePixels(transform: {worldSize: number; center: {lat: number}}): number {
     const radius = getGlobeRadiusPixels(transform.worldSize, transform.center.lat);
@@ -43,11 +44,26 @@ export function angularCoordinatesRadiansToVector(lngRadians: number, latRadians
     return vec;
 }
 
-export function projectTileCoordinatesToSphere(inTileX: number, inTileY: number, tileID: {x: number; y: number; z: number}): vec3 {
-    const mercator = tileCoordinatesToMercatorCoordinates(inTileX, inTileY, tileID);
-    const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
-    const sphere = angularCoordinatesRadiansToVector(angular[0], angular[1]);
-    return sphere;
+export function projectTileCoordinatesToSphere(inTileX: number, inTileY: number, tileIdX: number, tileIdY: number, tileIdZ: number): vec3 {
+    // This code could be assembled from 3 fuctions, but this is a hot path for symbol placement,
+    // so for optimization purposes everything is inlined by hand.
+    //
+    // Non-inlined variant of this function would be this:
+    //     const mercator = tileCoordinatesToMercatorCoordinates(inTileX, inTileY, tileID);
+    //     const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
+    //     const sphere = angularCoordinatesRadiansToVector(angular[0], angular[1]);
+    //     return sphere;
+    const scale = 1.0 / (1 << tileIdZ);
+    const mercatorX = inTileX / EXTENT * scale + tileIdX * scale;
+    const mercatorY = inTileY / EXTENT * scale + tileIdY * scale;
+    const sphericalX = mod(mercatorX * Math.PI * 2.0 + Math.PI, Math.PI * 2);
+    const sphericalY = 2.0 * Math.atan(Math.exp(Math.PI - (mercatorY * Math.PI * 2.0))) - Math.PI * 0.5;
+    const len = Math.cos(sphericalY);
+    const vec = new Float64Array(3) as any;
+    vec[0] = Math.sin(sphericalX) * len;
+    vec[1] = Math.sin(sphericalY);
+    vec[2] = Math.cos(sphericalX) * len;
+    return vec;
 }
 
 /**

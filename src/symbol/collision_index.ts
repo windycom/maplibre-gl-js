@@ -155,13 +155,13 @@ export class CollisionIndex {
 
         // Conditions are ordered from the fastest to evaluate to the slowest.
         let unplaceable = false;
-        unplaceable ||= projectedPoint.perspectiveRatio < this.perspectiveRatioCutoff;
-        unplaceable ||= !this.isInsideGrid(tlX, tlY, brX, brY);
         if (pitchWithMap) {
             unplaceable ||= projectedBox.allPointsOccluded;
         } else {
-            unplaceable ||= this.transform.tileCoordinatesOccluded(x, y, unwrappedTileID.canonical);
+            unplaceable ||= projectedPoint.isOccluded;
         }
+        unplaceable ||= projectedPoint.perspectiveRatio < this.perspectiveRatioCutoff;
+        unplaceable ||= !this.isInsideGrid(tlX, tlY, brX, brY);
 
         if (unplaceable ||
             (overlapMode !== 'always' && this.grid.hitTest(tlX, tlY, brX, brY, overlapMode, collisionGroupPredicate))) {
