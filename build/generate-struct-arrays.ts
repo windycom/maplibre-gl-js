@@ -16,28 +16,6 @@ import type {ViewType, StructArrayLayout} from '../src/util/struct_array';
 import posAttributes from '../src/data/pos_attributes';
 import pos3dAttributes from '../src/data/pos3d_attributes';
 import rasterBoundsAttributes from '../src/data/raster_bounds_attributes';
-import circleAttributes from '../src/data/bucket/circle_attributes';
-import fillAttributes from '../src/data/bucket/fill_attributes';
-import fillExtrusionAttributes from '../src/data/bucket/fill_extrusion_attributes';
-import {lineLayoutAttributes} from '../src/data/bucket/line_attributes';
-import {lineLayoutAttributesExt} from '../src/data/bucket/line_attributes_ext';
-import {patternAttributes} from '../src/data/bucket/pattern_attributes';
-// symbol layer specific arrays
-import {
-    symbolLayoutAttributes,
-    dynamicLayoutAttributes,
-    placementOpacityAttributes,
-    collisionBox,
-    collisionBoxLayout,
-    collisionCircleLayout,
-    collisionVertexAttributes,
-    quadTriangle,
-    placement,
-    symbolInstance,
-    glyphOffset,
-    lineVertex,
-    textAnchorOffset
-} from '../src/data/bucket/symbol_attributes';
 
 const typeAbbreviations = {
     'Int8': 'b',
@@ -49,7 +27,7 @@ const typeAbbreviations = {
     'Float32': 'f'
 };
 
-const arraysWithStructAccessors = [];
+const arraysWithStructAccessors: Array<any> = [];
 const arrayTypeEntries = new Set();
 const layoutCache = {};
 
@@ -138,34 +116,6 @@ createStructArrayType('pos', posAttributes);
 createStructArrayType('pos3d', pos3dAttributes);
 createStructArrayType('raster_bounds', rasterBoundsAttributes);
 
-// layout vertex arrays
-const layoutAttributes = {
-    circle: circleAttributes,
-    fill: fillAttributes,
-    'fill-extrusion': fillExtrusionAttributes,
-    heatmap: circleAttributes,
-    line: lineLayoutAttributes,
-    lineExt: lineLayoutAttributesExt,
-    pattern: patternAttributes
-};
-for (const name in layoutAttributes) {
-    createStructArrayType(`${name.replace(/-/g, '_')}_layout`, layoutAttributes[name]);
-}
-
-createStructArrayType('symbol_layout', symbolLayoutAttributes);
-createStructArrayType('symbol_dynamic_layout', dynamicLayoutAttributes);
-createStructArrayType('symbol_opacity', placementOpacityAttributes);
-createStructArrayType('collision_box', collisionBox, true);
-createStructArrayType('collision_box_layout', collisionBoxLayout);
-createStructArrayType('collision_circle_layout', collisionCircleLayout);
-createStructArrayType('collision_vertex', collisionVertexAttributes);
-createStructArrayType('quad_triangle', quadTriangle);
-createStructArrayType('placed_symbol', placement, true);
-createStructArrayType('symbol_instance', symbolInstance, true);
-createStructArrayType('glyph_offset', glyphOffset, true);
-createStructArrayType('symbol_line_vertex', lineVertex, true);
-createStructArrayType('text_anchor_offset', textAnchorOffset, true);
-
 // feature index array
 createStructArrayType('feature_index', createLayout([
     // the index of the feature in the original vectortile
@@ -217,7 +167,7 @@ createStructArrayLayoutType(createLayout([{
 const layouts = Object.keys(layoutCache).map(k => layoutCache[k]);
 
 function emitStructArrayLayout(locals) {
-    const output = [];
+    const output: Array<string> = [];
     const {
         className,
         members,
@@ -260,9 +210,9 @@ class ${structArrayLayoutClass} extends StructArray {`);
     // prep for emplaceBack: collect type sizes and count the number of arguments
     // we'll need
     const bytesPerElement = size;
-    const usedTypeSizes = [];
-    const argNames = [];
-    const argNamesTyped = [];
+    const usedTypeSizes: Array<number> = [];
+    const argNames: Array<any> = [];
+    const argNamesTyped: Array<any> = [];
 
     for (const member of members) {
         if (usedTypeSizes.indexOf(member.size) < 0) {
@@ -319,7 +269,7 @@ register('${structArrayLayoutClass}', ${structArrayLayoutClass});
 }
 
 function emitStructArray(locals) {
-    const output = [];
+    const output: Array<any> = [];
     const {
         arrayClass,
         members,
@@ -334,7 +284,7 @@ function emitStructArray(locals) {
     const structArrayLayoutClass = layoutClass;
 
     // collect components
-    const components = [];
+    const components: Array<any> = [];
     for (const member of members) {
         for (let c = 0; c < member.components; c++) {
             let name = member.name;

@@ -2,7 +2,6 @@ import type {ExpiryData, RequestParameters} from '../util/ajax';
 import type {RGBAImage} from '../util/image';
 import type {OverscaledTileID} from './tile_id';
 import type {FeatureIndex} from '../data/feature_index';
-import type {CollisionBoxArray} from '../data/array_types.g';
 import type {DEMEncoding} from '../data/dem_data';
 import type {PromoteIdSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {RemoveSourceParams} from '../util/actor_messages';
@@ -51,7 +50,6 @@ export type WorkerDEMTileParameters = TileParameters & {
  */
 export type WorkerTileResult = ExpiryData & {
     featureIndex: FeatureIndex;
-    collisionBoxArray: CollisionBoxArray;
     rawTileData?: ArrayBuffer;
     resourceTiming?: Array<PerformanceResourceTiming>;
 };

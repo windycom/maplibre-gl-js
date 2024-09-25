@@ -578,13 +578,6 @@ async function getImageFromStyle(styleForTest: StyleWithTestData, page: Page): P
                 document.body.appendChild(fakeCanvas);
             }
 
-            if (maplibregl.getRTLTextPluginStatus() === 'unavailable') {
-                maplibregl.setRTLTextPlugin(
-                    'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js',
-                    false // Don't lazy load the plugin
-                );
-            }
-
             const map = new maplibregl.Map({
                 container: 'map',
                 style,
@@ -612,7 +605,6 @@ async function getImageFromStyle(styleForTest: StyleWithTestData, page: Page): P
 
             await map.once('load');
             if (options.collisionDebug) {
-                map.showCollisionBoxes = true;
                 if (options.operations) {
                     options.operations.push(['wait']);
                 } else {

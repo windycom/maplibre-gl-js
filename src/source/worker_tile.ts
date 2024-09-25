@@ -1,6 +1,4 @@
 import {FeatureIndex} from '../data/feature_index';
-import {CollisionBoxArray} from '../data/array_types.g';
-import {DictionaryCoder} from '../util/dictionary_coder';
 import {OverscaledTileID} from './tile_id';
 
 import type {IActor} from '../util/actor';
@@ -27,7 +25,6 @@ export class WorkerTile {
 
     status: 'parsing' | 'done';
     data: VectorTile;
-    collisionBoxArray: CollisionBoxArray;
 
     abort: AbortController;
     vectorTile: VectorTile;
@@ -52,9 +49,6 @@ export class WorkerTile {
         this.status = 'parsing';
         this.data = data;
 
-        this.collisionBoxArray = new CollisionBoxArray();
-        const sourceLayerCoder = new DictionaryCoder(Object.keys(data.layers).sort());
-
         const featureIndex = new FeatureIndex(this.tileID, this.promoteId);
         featureIndex.bucketLayerIDs = [];
 
@@ -64,7 +58,6 @@ export class WorkerTile {
         this.status = 'done';
         return {
             featureIndex,
-            collisionBoxArray: this.collisionBoxArray,
         };
     }
 }

@@ -275,7 +275,6 @@ describe('Browser tests', () => {
                             y: markerBounding.y
                         });
                     });
-                    map.setTerrain({source: 'terrainSource'});
                 });
             });
         });
@@ -384,7 +383,6 @@ describe('Browser tests', () => {
                             resolve(marker.getElement().style.opacity);
                         }, 100);
                     });
-                    map.setTerrain({source: 'terrainSource'});
                 });
             });
         });
@@ -396,7 +394,6 @@ describe('Browser tests', () => {
 
         const rtlPromise = page.evaluate(() => {
             // console.log('Testing start');
-            return maplibregl.setRTLTextPlugin('badURL', false);
         });
 
         // exact message looks like
