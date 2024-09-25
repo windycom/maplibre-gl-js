@@ -1,4 +1,4 @@
-import packageJSON from '../package.json' with {type: 'json'};
+import packageJSON from '../package.json' with { type: 'json' };
 import {Map} from './ui/map';
 import {NavigationControl} from './ui/control/navigation_control';
 import {GeolocateControl} from './ui/control/geolocate_control';
@@ -27,6 +27,7 @@ import {RasterDEMTileSource} from './source/raster_dem_tile_source';
 import {RasterTileSource} from './source/raster_tile_source';
 import {VectorTileSource} from './source/vector_tile_source';
 import {VideoSource} from './source/video_source';
+import {OverscaledTileID} from './source/tile_id';
 import {Source, addSourceType} from './source/source';
 import {addProtocol, removeProtocol} from './source/protocol_crud';
 import {getGlobalDispatcher} from './util/dispatcher';
@@ -213,6 +214,7 @@ export {
     MapWheelEvent,
     MapTouchEvent,
     MapMouseEvent,
+    OverscaledTileID,
     type IControl,
     type CustomLayerInterface,
     type CanvasSourceSpecification,
