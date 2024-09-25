@@ -3,6 +3,7 @@ import sourcemaps from 'rollup-plugin-sourcemaps2';
 import {plugins, watchStagingPlugin} from './build/rollup_plugins';
 import banner from './build/banner';
 import {RollupOptions} from 'rollup';
+import {visualizer} from 'rollup-plugin-visualizer';
 
 const {BUILD, MINIFY} = process.env;
 const minified = MINIFY === 'true';
@@ -35,7 +36,7 @@ const config: RollupOptions[] = [{
         throw message;
     },
     treeshake: production,
-    plugins: plugins(production, minified)
+    plugins: [...plugins(production, minified), visualizer()]
 }, {
     // Next, bundle together the three "chunks" produced in the previous pass
     // into a single, final bundle. See rollup/bundle_prelude.js and
