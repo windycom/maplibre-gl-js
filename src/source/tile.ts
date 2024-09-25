@@ -1,33 +1,26 @@
 import {uniqueId, parseCacheControl} from '../util/util';
-import {deserialize as deserializeBucket} from '../data/bucket';
 import '../data/feature_index';
 import type {FeatureIndex} from '../data/feature_index';
 import {GeoJSONFeature} from '../util/vectortile_to_geojson';
 import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
-import {SymbolBucket} from '../data/bucket/symbol_bucket';
-import {CollisionBoxArray} from '../data/array_types.g';
 import {Texture} from '../render/texture';
 import {browser} from '../util/browser';
 import {toEvaluationFeature} from '../data/evaluation_feature';
 import {EvaluationParameters} from '../style/evaluation_parameters';
 import {SourceFeatureState} from '../source/source_state';
-import {rtlMainThreadPluginFactory} from './rtl_text_plugin_main_thread';
 
 const CLOCK_SKEW_RETRY_TIMEOUT = 30000;
 
-import type {Bucket} from '../data/bucket';
 import type {StyleLayer} from '../style/style_layer';
 import type {WorkerTileResult} from './worker_source';
 import type {Actor} from '../util/actor';
 import type {DEMData} from '../data/dem_data';
-import type {AlphaImage} from '../util/image';
 import type {ImageAtlas} from '../render/image_atlas';
 import type {ImageManager} from '../render/image_manager';
 import type {Context} from '../gl/context';
 import type {OverscaledTileID} from './tile_id';
 import type {Framebuffer} from '../gl/framebuffer';
 import type {IReadonlyTransform} from '../geo/transform_interface';
-import type {LayerFeatureStates} from './source_state';
 import type {FilterSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type Point from '@mapbox/point-geometry';
 import {mat4} from 'gl-matrix';
@@ -55,22 +48,16 @@ export class Tile {
     uid: number;
     uses: number;
     tileSize: number;
-    buckets: {[_: string]: Bucket};
     latestFeatureIndex: FeatureIndex;
     latestRawTileData: ArrayBuffer;
     imageAtlas: ImageAtlas;
     imageAtlasTexture: Texture;
-    glyphAtlasImage: AlphaImage;
-    glyphAtlasTexture: Texture;
     expirationTime: any;
     expiredRequestCount: number;
     state: TileState;
     timeAdded: number = 0;
     fadeEndTime: number = 0;
-    collisionBoxArray: CollisionBoxArray;
     redoWhenDone: boolean;
-    showCollisionBoxes: boolean;
-    placementSource: any;
     actor: Actor;
     vtLayers: {[_: string]: VectorTileLayer};
 
@@ -105,7 +92,6 @@ export class Tile {
         this.uid = uniqueId();
         this.uses = 0;
         this.tileSize = size;
-        this.buckets = {};
         this.expirationTime = null;
         this.queryPadding = 0;
         this.hasSymbolBuckets = false;
@@ -151,7 +137,7 @@ export class Tile {
      * @param painter - the painter
      * @param justReloaded - `true` to just reload
      */
-    loadVectorData(data: WorkerTileResult, painter: any, justReloaded?: boolean | null) {
+    loadVectorData(data: WorkerTileResult) {
         if (this.hasData()) {
             this.unloadVectorData();
         }
@@ -160,7 +146,6 @@ export class Tile {
 
         // empty GeoJSON tile
         if (!data) {
-            this.collisionBoxArray = new CollisionBoxArray();
             return;
         }
 
@@ -177,59 +162,12 @@ export class Tile {
                 this.latestFeatureIndex.rawTileData = this.latestRawTileData;
             }
         }
-        this.collisionBoxArray = data.collisionBoxArray;
-        this.buckets = deserializeBucket(data.buckets, painter.style);
-
-        this.hasSymbolBuckets = false;
-        for (const id in this.buckets) {
-            const bucket = this.buckets[id];
-            if (bucket instanceof SymbolBucket) {
-                this.hasSymbolBuckets = true;
-                if (justReloaded) {
-                    bucket.justReloaded = true;
-                } else {
-                    break;
-                }
-            }
-        }
-
-        this.hasRTLText = false;
-        if (this.hasSymbolBuckets) {
-            for (const id in this.buckets) {
-                const bucket = this.buckets[id];
-                if (bucket instanceof SymbolBucket) {
-                    if (bucket.hasRTLText) {
-                        this.hasRTLText = true;
-                        rtlMainThreadPluginFactory().lazyLoad();
-                        break;
-                    }
-                }
-            }
-        }
-
-        this.queryPadding = 0;
-        for (const id in this.buckets) {
-            const bucket = this.buckets[id];
-            this.queryPadding = Math.max(this.queryPadding, painter.style.getLayer(id).queryRadius(bucket));
-        }
-
-        if (data.imageAtlas) {
-            this.imageAtlas = data.imageAtlas;
-        }
-        if (data.glyphAtlasImage) {
-            this.glyphAtlasImage = data.glyphAtlasImage;
-        }
     }
 
     /**
      * Release any data or WebGL resources referenced by this tile.
      */
     unloadVectorData() {
-        for (const id in this.buckets) {
-            this.buckets[id].destroy();
-        }
-        this.buckets = {};
-
         if (this.imageAtlasTexture) {
             this.imageAtlasTexture.destroy();
         }
@@ -238,35 +176,15 @@ export class Tile {
             this.imageAtlas = null;
         }
 
-        if (this.glyphAtlasTexture) {
-            this.glyphAtlasTexture.destroy();
-        }
-
         this.latestFeatureIndex = null;
         this.state = 'unloaded';
     }
 
-    getBucket(layer: StyleLayer) {
-        return this.buckets[layer.id];
-    }
-
     upload(context: Context) {
-        for (const id in this.buckets) {
-            const bucket = this.buckets[id];
-            if (bucket.uploadPending()) {
-                bucket.upload(context);
-            }
-        }
-
         const gl = context.gl;
         if (this.imageAtlas && !this.imageAtlas.uploaded) {
             this.imageAtlasTexture = new Texture(context, this.imageAtlas.image, gl.RGBA);
             this.imageAtlas.uploaded = true;
-        }
-
-        if (this.glyphAtlasImage) {
-            this.glyphAtlasTexture = new Texture(context, this.glyphAtlasImage, gl.ALPHA);
-            this.glyphAtlasImage = null;
         }
     }
 
@@ -407,33 +325,6 @@ export class Tile {
             } else {
                 // Max value for `setTimeout` implementations is a 32 bit integer; cap this accordingly
                 return Math.min(this.expirationTime - new Date().getTime(), Math.pow(2, 31) - 1);
-            }
-        }
-    }
-
-    setFeatureState(states: LayerFeatureStates, painter: any) {
-        if (!this.latestFeatureIndex ||
-            !this.latestFeatureIndex.rawTileData ||
-            Object.keys(states).length === 0) {
-            return;
-        }
-
-        const vtLayers = this.latestFeatureIndex.loadVTLayers();
-
-        for (const id in this.buckets) {
-            if (!painter.style.hasLayer(id)) continue;
-
-            const bucket = this.buckets[id];
-            // Buckets are grouped by common source-layer
-            const sourceLayerId = bucket.layers[0]['sourceLayer'] || '_geojsonTileLayer';
-            const sourceLayer = vtLayers[sourceLayerId];
-            const sourceLayerStates = states[sourceLayerId];
-            if (!sourceLayer || !sourceLayerStates || Object.keys(sourceLayerStates).length === 0) continue;
-
-            bucket.update(sourceLayerStates, sourceLayer, this.imageAtlas && this.imageAtlas.patternPositions || {});
-            const layer = painter && painter.style && painter.style.getLayer(id);
-            if (layer) {
-                this.queryPadding = Math.max(this.queryPadding, layer.queryRadius(bucket));
             }
         }
     }

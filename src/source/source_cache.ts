@@ -21,7 +21,6 @@ import type {IReadonlyTransform, ITransform} from '../geo/transform_interface';
 import type {TileState} from './tile';
 import type {SourceSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {MapSourceDataEvent} from '../ui/events';
-import type {Terrain} from '../render/terrain';
 import type {CanvasSourceSpecification} from './canvas_source';
 
 /**
@@ -66,7 +65,6 @@ export class SourceCache extends Evented {
     _shouldReloadOnResume: boolean;
     _coveredTiles: {[_: string]: boolean};
     transform: ITransform;
-    terrain: Terrain;
     used: boolean;
     usedForTerrain: boolean;
     tileSize: number;
@@ -161,7 +159,7 @@ export class SourceCache extends Evented {
         this._paused = false;
         this._shouldReloadOnResume = false;
         if (shouldReload) this.reload();
-        if (this.transform) this.update(this.transform, this.terrain);
+        if (this.transform) this.update(this.transform);
     }
 
     async _loadTile(tile: Tile, id: string, state: TileState): Promise<void> {
@@ -174,7 +172,7 @@ export class SourceCache extends Evented {
                 this._source.fire(new ErrorEvent(err, {tile}));
             } else {
                 // continue to try loading parent/children tiles if a tile doesn't exist (404)
-                this.update(this.transform, this.terrain);
+                this.update(this.transform);
             }
         }
     }
@@ -200,7 +198,7 @@ export class SourceCache extends Evented {
             this._source.prepare();
         }
 
-        this._state.coalesceChanges(this._tiles, this.map ? this.map.painter : null);
+        this._state.coalesceChanges();
         for (const i in this._tiles) {
             const tile = this._tiles[i];
             tile.upload(context);
@@ -281,7 +279,6 @@ export class SourceCache extends Evented {
         if (previousState === 'expired') tile.refreshedUponExpiration = true;
         this._setTileReloadTimer(id, tile);
         if (this.getSource().type === 'raster-dem' && tile.dem) this._backfillDEM(tile);
-        this._state.initializeTileState(tile, this.map ? this.map.painter : null);
 
         if (!tile.aborted) {
             this._source.fire(new Event('data', {dataType: 'source', tile, coord: tile.tileID}));
@@ -499,9 +496,7 @@ export class SourceCache extends Evented {
         retain: { [_: string]: OverscaledTileID },
         minCoveringZoom: number,
         maxCoveringZoom: number,
-        zoom: number,
-        idealTileIDs: OverscaledTileID[],
-        terrain?: Terrain
+        zoom: number
     ) {
         const tilesForFading: { [_: string]: OverscaledTileID } = {};
         const fadingTiles = {};
@@ -541,59 +536,17 @@ export class SourceCache extends Evented {
                 retain[id] = tilesForFading[id];
             }
         }
-
-        // disable fading logic in terrain3D mode to avoid rendering two tiles on the same place
-        if (terrain) {
-            const idealRasterTileIDs: { [_: string]: OverscaledTileID } = {};
-            const missingTileIDs: { [_: string]: OverscaledTileID } = {};
-            for (const tileID of idealTileIDs) {
-                if (this._tiles[tileID.key].hasData())
-                    idealRasterTileIDs[tileID.key] = tileID;
-                else
-                    missingTileIDs[tileID.key] = tileID;
-            }
-            // search for a complete set of children for each missing tile
-            for (const key in missingTileIDs) {
-                const children = missingTileIDs[key].children(this._source.maxzoom);
-                if (this._tiles[children[0].key] && this._tiles[children[1].key] && this._tiles[children[2].key] && this._tiles[children[3].key]) {
-                    idealRasterTileIDs[children[0].key] = retain[children[0].key] = children[0];
-                    idealRasterTileIDs[children[1].key] = retain[children[1].key] = children[1];
-                    idealRasterTileIDs[children[2].key] = retain[children[2].key] = children[2];
-                    idealRasterTileIDs[children[3].key] = retain[children[3].key] = children[3];
-                    delete missingTileIDs[key];
-                }
-            }
-            // search for parent or sibling for each missing tile
-            for (const key in missingTileIDs) {
-                const tileID = missingTileIDs[key];
-                const parentTile = this.findLoadedParent(tileID, this._source.minzoom);
-                const siblingTile = this.findLoadedSibling(tileID);
-                const fadeTileRef = parentTile || siblingTile || null;
-                if (fadeTileRef) {
-                    idealRasterTileIDs[fadeTileRef.tileID.key] = retain[fadeTileRef.tileID.key] = fadeTileRef.tileID;
-                    // remove idealTiles which would be rendered twice
-                    for (const key in idealRasterTileIDs) {
-                        if (idealRasterTileIDs[key].isChildOf(fadeTileRef.tileID)) delete idealRasterTileIDs[key];
-                    }
-                }
-            }
-            // cover all tiles which are not needed
-            for (const key in this._tiles) {
-                if (!idealRasterTileIDs[key]) this._coveredTiles[key] = true;
-            }
-        }
     }
 
     /**
      * Removes tiles that are outside the viewport and adds new tiles that
      * are inside the viewport.
      */
-    update(transform: ITransform, terrain?: Terrain) {
+    update(transform: ITransform) {
         if (!this._sourceLoaded || this._paused) {
             return;
         }
         this.transform = transform;
-        this.terrain = terrain;
 
         this.updateCacheSize(transform);
         this.handleWrapJump(this.transform.center.lng);
@@ -615,8 +568,7 @@ export class SourceCache extends Evented {
                 minzoom: this._source.minzoom,
                 maxzoom: this._source.maxzoom,
                 roundZoom: this.usedForTerrain ? false : this._source.roundZoom,
-                reparseOverscaled: this._source.reparseOverscaled,
-                terrain
+                reparseOverscaled: this._source.reparseOverscaled
             });
 
             if (this._source.hasTile) {
@@ -658,7 +610,7 @@ export class SourceCache extends Evented {
         const retain = this._updateRetainedTiles(idealTileIDs, zoom);
 
         if (isRasterType(this._source.type)) {
-            this._updateCoveredAndRetainedTiles(retain, minCoveringZoom, maxCoveringZoom, zoom, idealTileIDs, terrain);
+            this._updateCoveredAndRetainedTiles(retain, minCoveringZoom, maxCoveringZoom, zoom);
         }
 
         for (const retainedId in retain) {
@@ -843,7 +795,6 @@ export class SourceCache extends Evented {
             this._setTileReloadTimer(tileID.key, tile);
             // set the tileID because the cached tile could have had a different wrap value
             tile.tileID = tileID;
-            this._state.initializeTileState(tile, this.map ? this.map.painter : null);
             if (this._cacheTimers[tileID.key]) {
                 clearTimeout(this._cacheTimers[tileID.key]);
                 delete this._cacheTimers[tileID.key];
@@ -922,7 +873,7 @@ export class SourceCache extends Evented {
         if (this._sourceLoaded && !this._paused && e.dataType === 'source' && eventSourceDataType === 'content') {
             this.reload();
             if (this.transform) {
-                this.update(this.transform, this.terrain);
+                this.update(this.transform);
             }
 
             this._didEmitContent = true;
@@ -959,8 +910,8 @@ export class SourceCache extends Evented {
             transform.getCameraQueryGeometry(pointQueryGeometry) :
             pointQueryGeometry;
 
-        const queryGeometry = pointQueryGeometry.map((p: Point) => transform.screenPointToMercatorCoordinate(p, this.terrain));
-        const cameraQueryGeometry = cameraPointQueryGeometry.map((p: Point) => transform.screenPointToMercatorCoordinate(p, this.terrain));
+        const queryGeometry = pointQueryGeometry.map((p: Point) => transform.screenPointToMercatorCoordinate(p));
+        const cameraQueryGeometry = cameraPointQueryGeometry.map((p: Point) => transform.screenPointToMercatorCoordinate(p));
 
         const ids = this.getIds();
 

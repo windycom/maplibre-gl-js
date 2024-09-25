@@ -1,8 +1,6 @@
 import type {SourceCache} from './source_cache';
 import type {StyleLayer} from '../style/style_layer';
-import type {CollisionIndex} from '../symbol/collision_index';
 import type {IReadonlyTransform} from '../geo/transform_interface';
-import type {RetainedQueryData} from '../symbol/placement';
 import type {FilterSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {MapGeoJSONFeature} from '../util/vectortile_to_geojson';
 import type Point from '@mapbox/point-geometry';
@@ -122,78 +120,6 @@ export function queryRenderedFeatures(
     for (const layerID in result) {
         result[layerID].forEach((featureWrapper) => {
             const feature = featureWrapper.feature as MapGeoJSONFeature;
-            const state = sourceCache.getFeatureState(feature.layer['source-layer'], feature.id);
-            feature.source = feature.layer.source;
-            if (feature.layer['source-layer']) {
-                feature.sourceLayer = feature.layer['source-layer'];
-            }
-            feature.state = state;
-        });
-    }
-    return result;
-}
-
-export function queryRenderedSymbols(styleLayers: {[_: string]: StyleLayer},
-    serializedLayers: {[_: string]: StyleLayer},
-    sourceCaches: {[_: string]: SourceCache},
-    queryGeometry: Array<Point>,
-    params: QueryRenderedFeaturesOptions,
-    collisionIndex: CollisionIndex,
-    retainedQueryData: {
-        [_: number]: RetainedQueryData;
-    }) {
-    const result = {};
-    const renderedSymbols = collisionIndex.queryRenderedSymbols(queryGeometry);
-    const bucketQueryData = [];
-    for (const bucketInstanceId of Object.keys(renderedSymbols).map(Number)) {
-        bucketQueryData.push(retainedQueryData[bucketInstanceId]);
-    }
-    bucketQueryData.sort(sortTilesIn);
-
-    for (const queryData of bucketQueryData) {
-        const bucketSymbols = queryData.featureIndex.lookupSymbolFeatures(
-            renderedSymbols[queryData.bucketInstanceId],
-            serializedLayers,
-            queryData.bucketIndex,
-            queryData.sourceLayerIndex,
-            params.filter,
-            params.layers,
-            params.availableImages,
-            styleLayers);
-
-        for (const layerID in bucketSymbols) {
-            const resultFeatures = result[layerID] = result[layerID] || [];
-            const layerSymbols = bucketSymbols[layerID];
-            layerSymbols.sort((a, b) => {
-                // Match topDownFeatureComparator from FeatureIndex, but using
-                // most recent sorting of features from bucket.sortFeatures
-                const featureSortOrder = queryData.featureSortOrder;
-                if (featureSortOrder) {
-                    // queryRenderedSymbols documentation says we'll return features in
-                    // "top-to-bottom" rendering order (aka last-to-first).
-                    // Actually there can be multiple symbol instances per feature, so
-                    // we sort each feature based on the first matching symbol instance.
-                    const sortedA = featureSortOrder.indexOf(a.featureIndex);
-                    const sortedB = featureSortOrder.indexOf(b.featureIndex);
-                    return sortedB - sortedA;
-                } else {
-                    // Bucket hasn't been re-sorted based on angle, so use the
-                    // reverse of the order the features appeared in the data.
-                    return b.featureIndex - a.featureIndex;
-                }
-            });
-            for (const symbolFeature of layerSymbols) {
-                resultFeatures.push(symbolFeature);
-            }
-        }
-    }
-
-    // Merge state from SourceCache into the results
-    for (const layerName in result) {
-        result[layerName].forEach((featureWrapper) => {
-            const feature = featureWrapper.feature;
-            const layer = styleLayers[layerName];
-            const sourceCache = sourceCaches[layer.source];
             const state = sourceCache.getFeatureState(feature.layer['source-layer'], feature.id);
             feature.source = feature.layer.source;
             if (feature.layer['source-layer']) {

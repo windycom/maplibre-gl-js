@@ -4,16 +4,13 @@ import {StyleLayer} from './style_layer';
 import {extend} from '../util/util';
 import {Event} from '../util/evented';
 import {RGBAImage} from '../util/image';
-import {rtlMainThreadPluginFactory} from '../source/rtl_text_plugin_main_thread';
 import {browser} from '../util/browser';
 import {OverscaledTileID} from '../source/tile_id';
 import {fakeServer, type FakeServer} from 'nise';
 
 import {EvaluationParameters} from './evaluation_parameters';
 import {LayerSpecification, GeoJSONSourceSpecification, FilterSpecification, SourceSpecification, StyleSpecification, SymbolLayerSpecification, SkySpecification} from '@maplibre/maplibre-gl-style-spec';
-import {GeoJSONSource} from '../source/geojson_source';
 import {StubMap, sleep} from '../util/test/util';
-import {RTLPluginLoadedEventName} from '../source/rtl_text_plugin_status';
 import {MessageType} from '../util/actor_messages';
 import {MercatorTransform} from '../geo/projection/mercator_transform';
 
@@ -65,41 +62,6 @@ beforeEach(() => {
 afterEach(() => {
     server.restore();
     mockConsoleError.mockRestore();
-});
-
-describe('Style', () => {
-    test('RTL plugin load reloads vector source but not raster source', async() => {
-        const map = getStubMap();
-        const style = new Style(map);
-        map.style = style;
-        style.loadJSON({
-            'version': 8,
-            'sources': {
-                'raster': {
-                    type: 'raster',
-                    tiles: ['http://tiles.server']
-                },
-                'vector': {
-                    type: 'vector',
-                    tiles: ['http://tiles.server']
-                }
-            },
-            'layers': [{
-                'id': 'raster',
-                'type': 'raster',
-                'source': 'raster'
-            }]
-        });
-
-        await style.once('style.load');
-        jest.spyOn(style.sourceCaches['raster'], 'reload');
-        jest.spyOn(style.sourceCaches['vector'], 'reload');
-
-        rtlMainThreadPluginFactory().fire(new Event(RTLPluginLoadedEventName));
-
-        expect(style.sourceCaches['raster'].reload).not.toHaveBeenCalled();
-        expect(style.sourceCaches['vector'].reload).toHaveBeenCalled();
-    });
 });
 
 describe('Style#loadURL', () => {
@@ -401,20 +363,6 @@ describe('Style#loadJSON', () => {
         });
     }));
 
-    test('sets terrain if defined', async () => {
-        const map = getStubMap();
-        const style = new Style(map);
-        map.setTerrain = jest.fn();
-        style.loadJSON(createStyleJSON({
-            sources: {'source-id': createGeoJSONSource()},
-            terrain: {source: 'source-id', exaggeration: 0.33}
-        }));
-
-        await style.once('style.load');
-
-        expect(style.map.setTerrain).toHaveBeenCalled();
-    });
-
     test('applies transformStyle function', async () => {
         const previousStyle = createStyleJSON({
             sources: {
@@ -593,17 +541,6 @@ describe('Style#_remove', () => {
         expect(sourceCache.onRemove).toHaveBeenCalledWith(style.map);
         expect(sourceCache.clearTiles).toHaveBeenCalled();
     });
-
-    test('deregisters plugin listener', async () => {
-        const style = new Style(getStubMap());
-        style.loadJSON(createStyleJSON());
-        jest.spyOn(rtlMainThreadPluginFactory(), 'off');
-
-        await style.once('style.load');
-        style._remove();
-
-        expect(rtlMainThreadPluginFactory().off).toHaveBeenCalled();
-    });
 });
 
 describe('Style#update', () => {
@@ -661,7 +598,6 @@ describe('Style#setState', () => {
         spys.push(jest.spyOn(style, 'setFilter').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'addSource').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'removeSource').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style, 'setGeoJSONSourceData').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLayerZoomRange').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLight').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setSky').mockImplementation((() => {}) as any));
@@ -711,11 +647,8 @@ describe('Style#setState', () => {
         spys.push(jest.spyOn(style, 'removeSource').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLayerZoomRange').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLight').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style, 'setGeoJSONSourceData').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style, 'setGlyphs').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setSprite').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setProjection').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style.map, 'setTerrain').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setSky').mockImplementation((() => {}) as any));
 
         const newStyle = JSON.parse(JSON.stringify(styleJson)) as StyleSpecification;
@@ -775,10 +708,7 @@ describe('Style#setState', () => {
         spys.push(jest.spyOn(style, 'removeSource').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLayerZoomRange').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setLight').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style, 'setGeoJSONSourceData').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style, 'setGlyphs').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setSprite').mockImplementation((() => {}) as any));
-        spys.push(jest.spyOn(style.map, 'setTerrain').mockImplementation((() => {}) as any));
         spys.push(jest.spyOn(style, 'setSky').mockImplementation((() => {}) as any));
 
         const newStyleJson = createStyleJSON();
@@ -826,48 +756,6 @@ describe('Style#setState', () => {
         style.loadJSON(initialState);
         await style.once('style.load');
         const didChange = style.setState(nextState);
-        expect(didChange).toBeTruthy();
-        expect(style.stylesheet).toEqual(nextState);
-    });
-
-    test('sets GeoJSON source data if different', async () => {
-        const initialState = createStyleJSON({
-            'sources': {'source-id': createGeoJSONSource()}
-        });
-
-        const geoJSONSourceData = {
-            'type': 'FeatureCollection',
-            'features': [
-                {
-                    'type': 'Feature',
-                    'geometry': {
-                        'type': 'Point',
-                        'coordinates': [125.6, 10.1]
-                    }
-                }
-            ]
-        };
-
-        const nextState = createStyleJSON({
-            'sources': {
-                'source-id': {
-                    'type': 'geojson',
-                    'data': geoJSONSourceData
-                }
-            }
-        });
-
-        const style = new Style(getStubMap());
-        style.loadJSON(initialState);
-
-        await style.once('style.load');
-        const geoJSONSource = style.sourceCaches['source-id'].getSource() as GeoJSONSource;
-        const mockStyleSetGeoJSONSourceDate = jest.spyOn(style, 'setGeoJSONSourceData');
-        const mockGeoJSONSourceSetData = jest.spyOn(geoJSONSource, 'setData');
-        const didChange = style.setState(nextState);
-
-        expect(mockStyleSetGeoJSONSourceDate).toHaveBeenCalledWith('source-id', geoJSONSourceData);
-        expect(mockGeoJSONSourceSetData).toHaveBeenCalledWith(geoJSONSourceData);
         expect(didChange).toBeTruthy();
         expect(style.stylesheet).toEqual(nextState);
     });
@@ -1218,22 +1106,6 @@ describe('Style#removeSprite', () => {
         await style.once('style.load');
         style.removeSprite('default');
         expect(style.stylesheet.sprite).toBeUndefined();
-    });
-});
-
-describe('Style#setGeoJSONSourceData', () => {
-    const geoJSON = {type: 'FeatureCollection', features: []} as GeoJSON.GeoJSON;
-
-    test('throws before loaded', () => {
-        const style = new Style(getStubMap());
-        expect(() => style.setGeoJSONSourceData('source-id', geoJSON)).toThrow(/load/i);
-    });
-
-    test('throws on non-existence', async () => {
-        const style = new Style(getStubMap());
-        style.loadJSON(createStyleJSON());
-        await style.once('style.load');
-        expect(() => style.setGeoJSONSourceData('source-id', geoJSON)).toThrow(/There is no source with this ID/);
     });
 });
 

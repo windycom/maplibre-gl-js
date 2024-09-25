@@ -1,19 +1,9 @@
 import {createStyleLayer} from './create_style_layer';
-import {FillStyleLayer} from './style_layer/fill_style_layer';
 import {extend} from '../util/util';
 import {Color, LayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import {EvaluationParameters} from './evaluation_parameters';
 import {TransitionParameters} from './properties';
 import {BackgroundStyleLayer} from './style_layer/background_style_layer';
-import {SymbolStyleLayer} from './style_layer/symbol_style_layer';
-
-describe('StyleLayer', () => {
-    test('instantiates the correct subclass', () => {
-        const layer = createStyleLayer({type: 'fill'} as LayerSpecification);
-
-        expect(layer instanceof FillStyleLayer).toBeTruthy();
-    });
-});
 
 describe('StyleLayer#setPaintProperty', () => {
     test('sets new property value', () => {
@@ -121,58 +111,6 @@ describe('StyleLayer#setPaintProperty', () => {
         });
     }));
 
-    test('can unset fill-outline-color #2886', () => {
-        const layer = createStyleLayer({
-            id: 'building',
-            type: 'fill',
-            source: 'streets',
-            paint: {
-                'fill-color': '#00f'
-            }
-        }) as FillStyleLayer;
-
-        layer.setPaintProperty('fill-outline-color', '#f00');
-        layer.updateTransitions({} as TransitionParameters);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-        expect(layer.paint.get('fill-outline-color').value).toEqual({kind: 'constant', value: new Color(1, 0, 0, 1)});
-
-        layer.setPaintProperty('fill-outline-color', undefined);
-        layer.updateTransitions({} as TransitionParameters);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-        expect(layer.paint.get('fill-outline-color').value).toEqual({kind: 'constant', value: new Color(0, 0, 1, 1)});
-
-    });
-
-    test('can transition fill-outline-color from undefined to a value #3657', () => {
-        const layer = createStyleLayer({
-            id: 'building',
-            type: 'fill',
-            source: 'streets',
-            paint: {
-                'fill-color': '#00f'
-            }
-        }) as FillStyleLayer;
-
-        // setup: set and then unset fill-outline-color so that, when we then try
-        // to re-set it, StyleTransition#calculate() attempts interpolation
-        layer.setPaintProperty('fill-outline-color', '#f00');
-        layer.updateTransitions({} as TransitionParameters);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-
-        layer.setPaintProperty('fill-outline-color', undefined);
-        layer.updateTransitions({} as TransitionParameters);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-
-        // re-set fill-outline-color and get its value, triggering the attempt
-        // to interpolate between undefined and #f00
-        layer.setPaintProperty('fill-outline-color', '#f00');
-        layer.updateTransitions({} as TransitionParameters);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-
-        layer.paint.get('fill-outline-color');
-
-    });
-
     test('sets null property value', () => {
         const layer = createStyleLayer({
             'id': 'background',
@@ -223,22 +161,6 @@ describe('StyleLayer#setLayoutProperty', () => {
         layer.setLayoutProperty('text-transform', 'lowercase');
 
         expect(layer.getLayoutProperty('text-transform')).toBe('lowercase');
-    });
-
-    test('unsets property value', () => {
-        const layer = createStyleLayer({
-            'id': 'symbol',
-            'type': 'symbol',
-            'layout': {
-                'text-transform': 'uppercase'
-            }
-        } as LayerSpecification) as SymbolStyleLayer;
-
-        layer.setLayoutProperty('text-transform', null);
-        layer.recalculate({zoom: 0, zoomHistory: {}} as EvaluationParameters, undefined);
-
-        expect(layer.layout.get('text-transform').value).toEqual({kind: 'constant', value: 'none'});
-        expect(layer.getLayoutProperty('text-transform')).toBeUndefined();
     });
 });
 

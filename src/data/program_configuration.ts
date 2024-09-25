@@ -1,18 +1,15 @@
 import {packUint8ToFloat} from '../shaders/encode_attribute';
-import {Color, supportsPropertyExpression} from '@maplibre/maplibre-gl-style-spec';
+import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {register} from '../util/web_worker_transfer';
 import {PossiblyEvaluatedPropertyValue} from '../style/properties';
-import {StructArrayLayout1f4, StructArrayLayout2f8, StructArrayLayout4f16, PatternLayoutArray} from './array_types.g';
 import {clamp} from '../util/util';
 import {EvaluationParameters} from '../style/evaluation_parameters';
-import {FeaturePositionMap} from './feature_position_map';
 import {Uniform, Uniform1f, UniformColor, Uniform4f} from '../render/uniform_binding';
 
 import type {UniformLocations} from '../render/uniform_binding';
 
 import type {CanonicalTileID} from '../source/tile_id';
 import type {Context} from '../gl/context';
-import type {TypedStyleLayer} from '../style/style_layer/typed_style_layer';
 import type {CrossfadeParameters} from '../style/evaluation_parameters';
 import type {StructArray, StructArrayMember} from '../util/struct_array';
 import type {VertexBuffer} from '../gl/vertex_buffer';
@@ -25,8 +22,6 @@ import type {
     CompositeExpression,
     FormattedSection
 } from '@maplibre/maplibre-gl-style-spec';
-import type {FeatureStates} from '../source/source_state';
-import type {VectorTileLayer} from '@mapbox/vector-tile';
 
 export type BinderUniform = {
     name: string;
@@ -416,44 +411,11 @@ export class ProgramConfiguration {
 
     _buffers: Array<VertexBuffer>;
 
-    constructor(layer: TypedStyleLayer, zoom: number, filterProperties: (_: string) => boolean) {
+    constructor() {
         this.binders = {};
         this._buffers = [];
 
         const keys = [];
-
-        for (const property in layer.paint._values) {
-            if (!filterProperties(property)) continue;
-            const value = (layer.paint as any).get(property);
-            if (!(value instanceof PossiblyEvaluatedPropertyValue) || !supportsPropertyExpression(value.property.specification)) {
-                continue;
-            }
-            const names = paintAttributeNames(property, layer.type);
-            const expression = value.value;
-            const type = value.property.specification.type;
-            const useIntegerZoom = (value.property as any).useIntegerZoom;
-            const propType = value.property.specification['property-type'];
-            const isCrossFaded = propType === 'cross-faded' || propType === 'cross-faded-data-driven';
-
-            if (expression.kind === 'constant') {
-                this.binders[property] = isCrossFaded ?
-                    new CrossFadedConstantBinder(expression.value, names) :
-                    new ConstantBinder(expression.value, names, type);
-                keys.push(`/u_${property}`);
-
-            } else if (expression.kind === 'source' || isCrossFaded) {
-                const StructArrayLayout = layoutType(property, type, 'source');
-                this.binders[property] = isCrossFaded ?
-                    new CrossFadedCompositeBinder(expression as CompositeExpression, type, useIntegerZoom, zoom, StructArrayLayout, layer.id) :
-                    new SourceExpressionBinder(expression as SourceExpression, names, type, StructArrayLayout);
-                keys.push(`/a_${property}`);
-
-            } else {
-                const StructArrayLayout = layoutType(property, type, 'composite');
-                this.binders[property] = new CompositeExpressionBinder(expression, names, type, useIntegerZoom, zoom, StructArrayLayout);
-                keys.push(`/z_${property}`);
-            }
-        }
 
         this.cacheKey = keys.sort().join('');
     }
@@ -476,36 +438,6 @@ export class ProgramConfiguration {
             if (binder instanceof CrossFadedConstantBinder)
                 binder.setConstantPatternPositions(posTo, posFrom);
         }
-    }
-
-    updatePaintArrays(
-        featureStates: FeatureStates,
-        featureMap: FeaturePositionMap,
-        vtLayer: VectorTileLayer,
-        layer: TypedStyleLayer,
-        imagePositions: {[_: string]: ImagePosition}
-    ): boolean {
-        let dirty: boolean = false;
-        for (const id in featureStates) {
-            const positions = featureMap.getPositions(id);
-
-            for (const pos of positions) {
-                const feature = vtLayer.feature(pos.index);
-
-                for (const property in this.binders) {
-                    const binder = this.binders[property];
-                    if ((binder instanceof SourceExpressionBinder || binder instanceof CompositeExpressionBinder ||
-                         binder instanceof CrossFadedCompositeBinder) && (binder as any).expression.isStateDependent === true) {
-                        //AHM: Remove after https://github.com/mapbox/mapbox-gl-js/issues/6255
-                        const value = (layer.paint as any).get(property);
-                        (binder as any).expression = value.value;
-                        (binder as AttributeBinder).updatePaintArray(pos.start, pos.end, feature, featureStates[id], imagePositions);
-                        dirty = true;
-                    }
-                }
-            }
-        }
-        return dirty;
     }
 
     defines(): Array<string> {
@@ -611,120 +543,9 @@ export class ProgramConfiguration {
     }
 }
 
-export class ProgramConfigurationSet<Layer extends TypedStyleLayer> {
-    programConfigurations: {[_: string]: ProgramConfiguration};
-    needsUpload: boolean;
-    _featureMap: FeaturePositionMap;
-    _bufferOffset: number;
-
-    constructor(layers: ReadonlyArray<Layer>, zoom: number, filterProperties: (_: string) => boolean = () => true) {
-        this.programConfigurations = {};
-        for (const layer of layers) {
-            this.programConfigurations[layer.id] = new ProgramConfiguration(layer, zoom, filterProperties);
-        }
-        this.needsUpload = false;
-        this._featureMap = new FeaturePositionMap();
-        this._bufferOffset = 0;
-    }
-
-    populatePaintArrays(length: number, feature: Feature, index: number, imagePositions: {[_: string]: ImagePosition}, canonical: CanonicalTileID, formattedSection?: FormattedSection) {
-        for (const key in this.programConfigurations) {
-            this.programConfigurations[key].populatePaintArrays(length, feature, imagePositions, canonical, formattedSection);
-        }
-
-        if (feature.id !== undefined) {
-            this._featureMap.add(feature.id, index, this._bufferOffset, length);
-        }
-        this._bufferOffset = length;
-
-        this.needsUpload = true;
-    }
-
-    updatePaintArrays(featureStates: FeatureStates, vtLayer: VectorTileLayer, layers: ReadonlyArray<TypedStyleLayer>, imagePositions: {[_: string]: ImagePosition}) {
-        for (const layer of layers) {
-            this.needsUpload = this.programConfigurations[layer.id].updatePaintArrays(featureStates, this._featureMap, vtLayer, layer, imagePositions) || this.needsUpload;
-        }
-    }
-
-    get(layerId: string) {
-        return this.programConfigurations[layerId];
-    }
-
-    upload(context: Context) {
-        if (!this.needsUpload) return;
-        for (const layerId in this.programConfigurations) {
-            this.programConfigurations[layerId].upload(context);
-        }
-        this.needsUpload = false;
-    }
-
-    destroy() {
-        for (const layerId in this.programConfigurations) {
-            this.programConfigurations[layerId].destroy();
-        }
-    }
-}
-
-function paintAttributeNames(property, type) {
-    const attributeNameExceptions = {
-        'text-opacity': ['opacity'],
-        'icon-opacity': ['opacity'],
-        'text-color': ['fill_color'],
-        'icon-color': ['fill_color'],
-        'text-halo-color': ['halo_color'],
-        'icon-halo-color': ['halo_color'],
-        'text-halo-blur': ['halo_blur'],
-        'icon-halo-blur': ['halo_blur'],
-        'text-halo-width': ['halo_width'],
-        'icon-halo-width': ['halo_width'],
-        'line-gap-width': ['gapwidth'],
-        'line-pattern': ['pattern_to', 'pattern_from', 'pixel_ratio_to', 'pixel_ratio_from'],
-        'fill-pattern': ['pattern_to', 'pattern_from', 'pixel_ratio_to', 'pixel_ratio_from'],
-        'fill-extrusion-pattern': ['pattern_to', 'pattern_from', 'pixel_ratio_to', 'pixel_ratio_from'],
-    };
-
-    return attributeNameExceptions[property] || [property.replace(`${type}-`, '').replace(/-/g, '_')];
-}
-
-function getLayoutException(property) {
-    const propertyExceptions = {
-        'line-pattern': {
-            'source': PatternLayoutArray,
-            'composite': PatternLayoutArray
-        },
-        'fill-pattern': {
-            'source': PatternLayoutArray,
-            'composite': PatternLayoutArray
-        },
-        'fill-extrusion-pattern': {
-            'source': PatternLayoutArray,
-            'composite': PatternLayoutArray
-        }
-    };
-
-    return propertyExceptions[property];
-}
-
-function layoutType(property, type, binderType) {
-    const defaultLayouts = {
-        'color': {
-            'source': StructArrayLayout2f8,
-            'composite': StructArrayLayout4f16
-        },
-        'number': {
-            'source': StructArrayLayout1f4,
-            'composite': StructArrayLayout2f8
-        }
-    };
-
-    const layoutException = getLayoutException(property);
-    return  layoutException && layoutException[binderType] || defaultLayouts[type][binderType];
-}
-
 register('ConstantBinder', ConstantBinder);
 register('CrossFadedConstantBinder', CrossFadedConstantBinder);
 register('SourceExpressionBinder', SourceExpressionBinder);
 register('CrossFadedCompositeBinder', CrossFadedCompositeBinder);
 register('CompositeExpressionBinder', CompositeExpressionBinder);
 register('ProgramConfiguration', ProgramConfiguration, {omit: ['_buffers']});
-register('ProgramConfigurationSet', ProgramConfigurationSet);

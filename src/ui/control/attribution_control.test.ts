@@ -307,38 +307,6 @@ describe('AttributionControl', () => {
         expect(attribution._innerContainer.innerHTML).toBe(defaultAttributionControlOptions.customAttribution);
     });
 
-    test('shows attributions for sources that are used for terrain', async () => {
-        global.fetch = null;
-        const server = fakeServer.create();
-        server.respondWith('/source.json', JSON.stringify({
-            minzoom: 5,
-            maxzoom: 12,
-            attribution: 'Terrain',
-            tiles: ['http://example.com/{z}/{x}/{y}.pngraw'],
-            bounds: [-47, -7, -45, -5]
-        }));
-
-        const attribution = new AttributionControl();
-        map.addControl(attribution);
-
-        const spy = jest.fn();
-        map.on('data', spy);
-        await map.once('load');
-        map.addSource('1', {type: 'raster-dem', url: '/source.json'});
-        server.respond();
-        map.setTerrain({source: '1'});
-        await sleep(100);
-
-        // there should not be a visibility event since there is no layer
-        expect(spy.mock.calls.filter((call) => {
-            const mapDataEvent: MapSourceDataEvent = call[0];
-            return mapDataEvent.dataType === 'source' &&
-                   mapDataEvent.sourceDataType === 'visibility';
-        })).toHaveLength(0);
-
-        expect(attribution._innerContainer.innerHTML).toBe(`Terrain | ${defaultAttributionControlOptions.customAttribution}`);
-    });
-
     test('toggles attributions for sources whose visibility changes when zooming', async () => {
         const attribution = new AttributionControl({});
         map.addControl(attribution);

@@ -78,23 +78,12 @@ export default class TileParser {
         return this.icons[key];
     }
 
-    async loadGlyphs(params: any) {
-        const key = JSON.stringify(params);
-        if (!this.glyphs[key]) {
-            this.glyphs[key] = await this.style.getGlyphs('', params);
-        }
-        return this.glyphs[key];
-    }
-
     setup(): Promise<void> {
         const parser = this;
         this.actor = {
             sendAsync(message) {
                 if (message.type === MessageType.getImages) {
                     return parser.loadImages(message.data);
-                }
-                if (message.type === MessageType.getGlyphs) {
-                    return parser.loadGlyphs(message.data);
                 }
                 throw new Error(`Invalid action ${message.type}`);
             }

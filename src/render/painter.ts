@@ -93,7 +93,6 @@ export class Painter {
     id: string;
     _showOverdrawInspector: boolean;
     cache: {[_: string]: Program<any>};
-    symbolFadeChange: number;
     debugOverlayTexture: Texture;
     debugOverlayCanvas: HTMLCanvasElement;
 
@@ -404,8 +403,6 @@ export class Painter {
         this.options = options;
 
         this.imageManager = style.imageManager;
-
-        this.symbolFadeChange = style.placement.symbolFadeChange(browser.now());
 
         this.imageManager.beginFrame();
 

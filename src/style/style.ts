@@ -3,10 +3,8 @@ import {StyleLayer} from './style_layer';
 import {createStyleLayer} from './create_style_layer';
 import {loadSprite} from './load_sprite';
 import {ImageManager} from '../render/image_manager';
-import {GlyphManager} from '../render/glyph_manager';
 import {Light} from './light';
 import {Sky} from './sky';
-import {LineAtlas} from '../render/line_atlas';
 import {clone, extend, deepEqual, filterObject, mapObject} from '../util/util';
 import {coerceSpriteToArray} from '../util/style';
 import {getJSON, getReferrer} from '../util/ajax';
@@ -15,16 +13,11 @@ import {browser} from '../util/browser';
 import {Dispatcher} from '../util/dispatcher';
 import {validateStyle, emitValidationErrors as _emitValidationErrors} from './validate_style';
 import {Source} from '../source/source';
-import {QueryRenderedFeaturesOptions, QuerySourceFeatureOptions, queryRenderedFeatures, queryRenderedSymbols, querySourceFeatures} from '../source/query_features';
+import {QueryRenderedFeaturesOptions, QuerySourceFeatureOptions, queryRenderedFeatures, querySourceFeatures} from '../source/query_features';
 import {SourceCache} from '../source/source_cache';
-import {GeoJSONSource} from '../source/geojson_source';
 import {latest as styleSpec, derefLayers as deref, emptyStyle, diff as diffStyles, DiffCommand} from '@maplibre/maplibre-gl-style-spec';
 import {getGlobalWorkerPool} from '../util/global_worker_pool';
-import {rtlMainThreadPluginFactory} from '../source/rtl_text_plugin_main_thread';
-import {RTLPluginLoadedEventName} from '../source/rtl_text_plugin_status';
-import {PauseablePlacement} from './pauseable_placement';
 import {ZoomHistory} from './zoom_history';
-import {CrossTileSymbolIndex} from '../symbol/cross_tile_symbol_index';
 import {validateCustomStyleLayer} from './style_layer/custom_style_layer';
 import type {MapGeoJSONFeature} from '../util/vectortile_to_geojson';
 
@@ -41,7 +34,6 @@ import type {Map} from '../ui/map';
 import type {IReadonlyTransform, ITransform} from '../geo/transform_interface';
 import type {StyleImage} from './style_image';
 import type {EvaluationParameters} from './evaluation_parameters';
-import type {Placement} from '../symbol/placement';
 import type {
     LayerSpecification,
     FilterSpecification,
@@ -58,8 +50,6 @@ import type {CustomLayerInterface} from './style_layer/custom_style_layer';
 import type {Validator} from './validate_style';
 import {
     MessageType,
-    type GetGlyphsParameters,
-    type GetGlyphsResponse,
     type GetImagesParameters,
     type GetImagesResponse
 } from '../util/actor_messages';
@@ -189,8 +179,6 @@ export class Style extends Evented {
     stylesheet: StyleSpecification;
     dispatcher: Dispatcher;
     imageManager: ImageManager;
-    glyphManager: GlyphManager;
-    lineAtlas: LineAtlas;
     light: Light;
     projection: Projection;
     sky: Sky;
@@ -217,27 +205,18 @@ export class Style extends Evented {
     // image ids of all images loaded (sprite + user)
     _availableImages: Array<string>;
 
-    crossTileSymbolIndex: CrossTileSymbolIndex;
-    pauseablePlacement: PauseablePlacement;
-    placement: Placement;
     z: number;
 
-    constructor(map: Map, options: StyleOptions = {}) {
+    constructor(map: Map) {
         super();
 
         this.map = map;
         this.dispatcher = new Dispatcher(getGlobalWorkerPool(), map._getMapId());
-        this.dispatcher.registerMessageHandler(MessageType.getGlyphs, (mapId, params) => {
-            return this.getGlyphs(mapId, params);
-        });
         this.dispatcher.registerMessageHandler(MessageType.getImages, (mapId, params) => {
             return this.getImages(mapId, params);
         });
         this.imageManager = new ImageManager();
         this.imageManager.setEventedParent(this);
-        this.glyphManager = new GlyphManager(map._requestManager, options.localIdeographFontFamily);
-        this.lineAtlas = new LineAtlas(256, 512);
-        this.crossTileSymbolIndex = new CrossTileSymbolIndex();
 
         this._spritesImagesIds = {};
         this._layers = {};
@@ -251,7 +230,6 @@ export class Style extends Evented {
         this._resetUpdates();
 
         this.dispatcher.broadcast(MessageType.setReferrer, getReferrer());
-        rtlMainThreadPluginFactory().on(RTLPluginLoadedEventName, this._rtlPluginLoaded);
 
         this.on('data', (event) => {
             if (event.dataType !== 'source' || event.sourceDataType !== 'metadata') {
@@ -344,15 +322,12 @@ export class Style extends Evented {
             this.imageManager.setLoaded(true);
         }
 
-        this.glyphManager.setURL(nextState.glyphs);
         this._createLayers();
 
         this.light = new Light(this.stylesheet.light);
         this._setProjectionInternal(this.stylesheet.projection?.type || 'mercator');
 
         this.sky = new Sky(this.stylesheet.sky);
-
-        this.map.setTerrain(this.stylesheet.terrain ?? null);
 
         this.fire(new Event('data', {dataType: 'style'}));
         this.fire(new Event('style.load'));
@@ -775,17 +750,8 @@ export class Style extends Evented {
                 case 'setLight':
                     operations.push(() => this.setLight.apply(this, op.args));
                     break;
-                case 'setGeoJSONSourceData':
-                    operations.push(() => this.setGeoJSONSourceData.apply(this, op.args));
-                    break;
-                case 'setGlyphs':
-                    operations.push(() => this.setGlyphs.apply(this, op.args));
-                    break;
                 case 'setSprite':
                     operations.push(() => this.setSprite.apply(this, op.args));
-                    break;
-                case 'setTerrain':
-                    operations.push(() => this.map.setTerrain.apply(this, op.args));
                     break;
                 case 'setSky':
                     operations.push(() => this.setSky.apply(this, op.args));
@@ -895,22 +861,6 @@ export class Style extends Evented {
         sourceCache.fire(new Event('data', {sourceDataType: 'metadata', dataType: 'source', sourceId: id}));
         sourceCache.setEventedParent(null);
         sourceCache.onRemove(this.map);
-        this._changed = true;
-    }
-
-    /**
-     * Set the data of a GeoJSON source, given its id.
-     * @param id - id of the source
-     * @param data - GeoJSON source
-     */
-    setGeoJSONSourceData(id: string, data: GeoJSON.GeoJSON | string) {
-        this._checkLoaded();
-
-        if (this.sourceCaches[id] === undefined) throw new Error(`There is no source with this ID=${id}`);
-        const geojsonSource: GeoJSONSource = (this.sourceCaches[id].getSource() as any);
-        if (geojsonSource.type !== 'geojson') throw new Error(`geojsonSource.type is ${geojsonSource.type}, which is !== 'geojson`);
-
-        geojsonSource.setData(data);
         this._changed = true;
     }
 
@@ -1297,7 +1247,6 @@ export class Style extends Evented {
 
         const sources = mapObject(this.sourceCaches, (source) => source.serialize());
         const layers = this._serializeByIds(this._order, true);
-        const terrain = this.map.getTerrain() || undefined;
         const myStyleSheet = this.stylesheet;
 
         return filterObject({
@@ -1315,8 +1264,7 @@ export class Style extends Evented {
             transition: myStyleSheet.transition,
             projection: myStyleSheet.projection,
             sources,
-            layers,
-            terrain
+            layers
         },
         (value) => { return value !== undefined; });
     }
@@ -1443,21 +1391,6 @@ export class Style extends Evented {
                     queryGeometry,
                     params,
                     transform)
-            );
-        }
-
-        if (this.placement) {
-            // If a placement has run, query against its CollisionIndex
-            // for symbol results, and treat it as an extra source to merge
-            sourceResults.push(
-                queryRenderedSymbols(
-                    this._layers,
-                    serializedLayers,
-                    this.sourceCaches,
-                    queryGeometry,
-                    params,
-                    this.placement.collisionIndex,
-                    this.placement.retainedQueryData)
             );
         }
 
@@ -1593,7 +1526,6 @@ export class Style extends Evented {
             this._spriteRequest.abort();
             this._spriteRequest = null;
         }
-        rtlMainThreadPluginFactory().off(RTLPluginLoadedEventName, this._rtlPluginLoaded);
         for (const layerId in this._layers) {
             const layer: StyleLayer = this._layers[layerId];
             layer.setEventedParent(null);
@@ -1622,89 +1554,7 @@ export class Style extends Evented {
 
     _updateSources(transform: ITransform) {
         for (const id in this.sourceCaches) {
-            this.sourceCaches[id].update(transform, this.map.terrain);
-        }
-    }
-
-    _generateCollisionBoxes() {
-        for (const id in this.sourceCaches) {
-            this._reloadSource(id);
-        }
-    }
-
-    _updatePlacement(transform: ITransform, showCollisionBoxes: boolean, fadeDuration: number, crossSourceCollisions: boolean, forceFullPlacement: boolean = false) {
-        let symbolBucketsChanged = false;
-        let placementCommitted = false;
-
-        const layerTiles = {};
-
-        for (const layerID of this._order) {
-            const styleLayer = this._layers[layerID];
-            if (styleLayer.type !== 'symbol') continue;
-
-            if (!layerTiles[styleLayer.source]) {
-                const sourceCache = this.sourceCaches[styleLayer.source];
-                layerTiles[styleLayer.source] = sourceCache.getRenderableIds(true)
-                    .map((id) => sourceCache.getTileByID(id))
-                    .sort((a, b) => (b.tileID.overscaledZ - a.tileID.overscaledZ) || (a.tileID.isLessThan(b.tileID) ? -1 : 1));
-            }
-
-            const layerBucketsChanged = this.crossTileSymbolIndex.addLayer(styleLayer, layerTiles[styleLayer.source], transform.center.lng);
-            symbolBucketsChanged = symbolBucketsChanged || layerBucketsChanged;
-        }
-        this.crossTileSymbolIndex.pruneUnusedLayers(this._order);
-
-        // Anything that changes our "in progress" layer and tile indices requires us
-        // to start over. When we start over, we do a full placement instead of incremental
-        // to prevent starvation.
-        // We need to restart placement to keep layer indices in sync.
-        // Also force full placement when fadeDuration === 0 to ensure that newly loaded
-        // tiles will fully display symbols in their first frame
-        forceFullPlacement = forceFullPlacement || this._layerOrderChanged || fadeDuration === 0;
-
-        if (forceFullPlacement || !this.pauseablePlacement || (this.pauseablePlacement.isDone() && !this.placement.stillRecent(browser.now(), transform.zoom))) {
-            this.pauseablePlacement = new PauseablePlacement(transform, this.map.terrain, this._order, forceFullPlacement, showCollisionBoxes, fadeDuration, crossSourceCollisions, this.placement);
-            this._layerOrderChanged = false;
-        }
-
-        if (this.pauseablePlacement.isDone()) {
-            // the last placement finished running, but the next one hasn’t
-            // started yet because of the `stillRecent` check immediately
-            // above, so mark it stale to ensure that we request another
-            // render frame
-            this.placement.setStale();
-        } else {
-            this.pauseablePlacement.continuePlacement(this._order, this._layers, layerTiles);
-
-            if (this.pauseablePlacement.isDone()) {
-                this.placement = this.pauseablePlacement.commit(browser.now());
-                placementCommitted = true;
-            }
-
-            if (symbolBucketsChanged) {
-                // since the placement gets split over multiple frames it is possible
-                // these buckets were processed before they were changed and so the
-                // placement is already stale while it is in progress
-                this.pauseablePlacement.placement.setStale();
-            }
-        }
-
-        if (placementCommitted || symbolBucketsChanged) {
-            for (const layerID of this._order) {
-                const styleLayer = this._layers[layerID];
-                if (styleLayer.type !== 'symbol') continue;
-                this.placement.updateLayerOpacities(styleLayer, layerTiles[styleLayer.source]);
-            }
-        }
-
-        // needsRender is false when we have just finished a placement that didn't change the visibility of any symbols
-        const needsRerender = !this.pauseablePlacement.isDone() || this.placement.hasTransitions(browser.now());
-        return needsRerender;
-    }
-
-    _releaseSymbolFadeTiles() {
-        for (const id in this.sourceCaches) {
-            this.sourceCaches[id].releaseSymbolFadeTiles();
+            this.sourceCaches[id].update(transform);
         }
     }
 
@@ -1728,33 +1578,6 @@ export class Style extends Evented {
             sourceCache.setDependencies(params.tileID.key, params.type, params.icons);
         }
         return images;
-    }
-
-    async getGlyphs(mapId: string | number, params: GetGlyphsParameters): Promise<GetGlyphsResponse> {
-        const glyphs = await this.glyphManager.getGlyphs(params.stacks);
-        const sourceCache = this.sourceCaches[params.source];
-        if (sourceCache) {
-            // we are not setting stacks as dependencies since for now
-            // we just need to know which tiles have glyph dependencies
-            sourceCache.setDependencies(params.tileID.key, params.type, ['']);
-        }
-        return glyphs;
-    }
-
-    getGlyphsUrl() {
-        return this.stylesheet.glyphs || null;
-    }
-
-    setGlyphs(glyphsUrl: string | null, options: StyleSetterOptions = {}) {
-        this._checkLoaded();
-        if (glyphsUrl && this._validate(validateStyle.glyphs, 'glyphs', glyphsUrl, null, options)) {
-            return;
-        }
-
-        this._glyphsDidChange = true;
-        this.stylesheet.glyphs = glyphsUrl;
-        this.glyphManager.entries = {};
-        this.glyphManager.setURL(glyphsUrl);
     }
 
     /**

@@ -1,20 +1,13 @@
 import {StyleLayer} from './style_layer';
 import {createStyleLayer} from './create_style_layer';
 
-import {featureFilter, groupByLayout} from '@maplibre/maplibre-gl-style-spec';
+import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
 
-import type {TypedStyleLayer} from './style_layer/typed_style_layer';
 import type {LayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 
 export type LayerConfigs = {[_: string]: LayerSpecification};
-export type Family<Layer extends TypedStyleLayer> = Array<Layer>;
 
 export class StyleLayerIndex {
-    familiesBySource: {
-        [source: string]: {
-            [sourceLayer: string]: Array<Family<any>>;
-        };
-    };
     keyCache: {[source: string]: string};
 
     _layerConfigs: LayerConfigs;
@@ -46,33 +39,6 @@ export class StyleLayerIndex {
             delete this.keyCache[id];
             delete this._layerConfigs[id];
             delete this._layers[id];
-        }
-
-        this.familiesBySource = {};
-
-        const groups = groupByLayout(Object.values(this._layerConfigs), this.keyCache);
-
-        for (const layerConfigs of groups) {
-            const layers = layerConfigs.map((layerConfig) => this._layers[layerConfig.id]);
-
-            const layer = layers[0];
-            if (layer.visibility === 'none') {
-                continue;
-            }
-
-            const sourceId = layer.source || '';
-            let sourceGroup = this.familiesBySource[sourceId];
-            if (!sourceGroup) {
-                sourceGroup = this.familiesBySource[sourceId] = {};
-            }
-
-            const sourceLayerId = layer.sourceLayer || '_geojsonTileLayer';
-            let sourceLayerFamilies = sourceGroup[sourceLayerId];
-            if (!sourceLayerFamilies) {
-                sourceLayerFamilies = sourceGroup[sourceLayerId] = [];
-            }
-
-            sourceLayerFamilies.push(layers);
         }
     }
 }

@@ -126,22 +126,6 @@ describe('SourceCache#addTile', () => {
         sourceCache._addTile(tileID);
     }));
 
-    test('updates feature state on added uncached tile', () => new Promise<void>(done => {
-        const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
-        let updateFeaturesSpy;
-        const sourceCache = createSourceCache({});
-        sourceCache._source.loadTile = async (tile) => {
-            sourceCache.on('data', () => {
-                expect(updateFeaturesSpy).toHaveBeenCalledTimes(1);
-                done();
-            });
-            updateFeaturesSpy = jest.spyOn(tile, 'setFeatureState');
-            tile.state = 'loaded';
-        };
-        sourceCache.onAdd(undefined);
-        sourceCache._addTile(tileID);
-    }));
-
     test('uses cached tile', () => {
         const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
         let load = 0,
@@ -163,28 +147,6 @@ describe('SourceCache#addTile', () => {
 
         expect(load).toBe(1);
         expect(add).toBe(1);
-
-    });
-
-    test('updates feature state on cached tile', () => {
-        const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
-
-        const sourceCache = createSourceCache({});
-        sourceCache._source.loadTile = async (tile) => {
-            tile.state = 'loaded';
-        };
-
-        const tr = new MercatorTransform();
-        tr.resize(512, 512);
-        sourceCache.updateCacheSize(tr);
-
-        const tile = sourceCache._addTile(tileID);
-        const updateFeaturesSpy = jest.spyOn(tile, 'setFeatureState');
-
-        sourceCache._removeTile(tileID.key);
-        sourceCache._addTile(tileID);
-
-        expect(updateFeaturesSpy).toHaveBeenCalledTimes(1);
 
     });
 

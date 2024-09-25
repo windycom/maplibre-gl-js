@@ -2,8 +2,7 @@ import {StencilMode} from '../gl/stencil_mode';
 import {DepthMode} from '../gl/depth_mode';
 import {CullFaceMode} from '../gl/cull_face_mode';
 import {
-    backgroundUniformValues,
-    backgroundPatternUniformValues
+    backgroundUniformValues
 } from './program/background_program';
 
 import type {Painter} from './painter';
@@ -22,31 +21,20 @@ export function drawBackground(painter: Painter, sourceCache: SourceCache, layer
     const projection = painter.style.projection;
     const transform = painter.transform;
     const tileSize = transform.tileSize;
-    const image = layer.paint.get('background-pattern');
-    if (painter.isPatternMissing(image)) return;
 
-    const pass = (!image && color.a === 1 && opacity === 1 && painter.opaquePassEnabledForLayer()) ? 'opaque' : 'translucent';
+    const pass = (color.a === 1 && opacity === 1 && painter.opaquePassEnabledForLayer()) ? 'opaque' : 'translucent';
     if (painter.renderPass !== pass) return;
 
     const stencilMode = StencilMode.disabled;
     const depthMode = painter.depthModeForSublayer(0, pass === 'opaque' ? DepthMode.ReadWrite : DepthMode.ReadOnly);
     const colorMode = painter.colorModeForRenderPass();
-    const program = painter.useProgram(image ? 'backgroundPattern' : 'background');
+    const program = painter.useProgram('background');
     const tileIDs = coords ? coords : transform.coveringTiles({tileSize});
-
-    if (image) {
-        context.activeTexture.set(gl.TEXTURE0);
-        painter.imageManager.bind(painter.context);
-    }
-
-    const crossfade = layer.getCrossfadeParameters();
 
     for (const tileID of tileIDs) {
         const projectionData = transform.getProjectionData(tileID);
 
-        const uniformValues = image ?
-            backgroundPatternUniformValues(opacity, painter, image, {tileID, tileSize}, crossfade) :
-            backgroundUniformValues(opacity, color);
+        const uniformValues = backgroundUniformValues(opacity, color);
 
         // For globe rendering, background uses tile meshes *without* borders and no stencil clipping.
         // This works assuming the tileIDs list contains only tiles of the same zoom level.

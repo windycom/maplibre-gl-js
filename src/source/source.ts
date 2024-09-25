@@ -1,7 +1,4 @@
-import {VectorTileSource} from '../source/vector_tile_source';
 import {RasterTileSource} from '../source/raster_tile_source';
-import {RasterDEMTileSource} from '../source/raster_dem_tile_source';
-import {GeoJSONSource} from '../source/geojson_source';
 import {VideoSource} from '../source/video_source';
 import {ImageSource} from '../source/image_source';
 import {CanvasSource} from '../source/canvas_source';
@@ -150,16 +147,10 @@ export const create = (id: string, specification: SourceSpecification | CanvasSo
 
 const getSourceType = (name: string): SourceClass => {
     switch (name) {
-        case 'geojson':
-            return GeoJSONSource;
         case 'image':
             return ImageSource;
         case 'raster':
             return RasterTileSource;
-        case 'raster-dem':
-            return RasterDEMTileSource;
-        case 'vector':
-            return VectorTileSource;
         case 'video':
             return VideoSource;
         case 'canvas':

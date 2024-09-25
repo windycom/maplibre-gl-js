@@ -1828,7 +1828,7 @@ export class Map extends Camera {
             delete this.style;
             return this;
         } else {
-            this.style = new Style(this, options || {});
+            this.style = new Style(this);
         }
 
         this.style.setEventedParent(this, {style: this.style});
@@ -1844,7 +1844,7 @@ export class Map extends Camera {
 
     _lazyInitEmptyStyle() {
         if (!this.style) {
-            this.style = new Style(this, {});
+            this.style = new Style(this);
             this.style.setEventedParent(this, {style: this.style});
             this.style.loadEmpty();
         }
@@ -2560,31 +2560,6 @@ export class Map extends Camera {
     }
 
     /**
-     * Sets the value of the style's glyphs property.
-     *
-     * @param glyphsUrl - Glyph URL to set. Must conform to the [MapLibre Style Specification](https://maplibre.org/maplibre-style-spec/glyphs/).
-     * @param options - Options object.
-     * @example
-     * ```ts
-     * map.setGlyphs('https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf');
-     * ```
-     */
-    setGlyphs(glyphsUrl: string | null, options: StyleSetterOptions = {}): this {
-        this._lazyInitEmptyStyle();
-        this.style.setGlyphs(glyphsUrl, options);
-        return this._update(true);
-    }
-
-    /**
-     * Returns the value of the style's glyphs URL
-     *
-     * @returns glyphs Style's glyphs url
-     */
-    getGlyphs(): string | null {
-        return this.style.getGlyphsUrl();
-    }
-
-    /**
      * Adds a sprite to the map's style. Fires the `style` event.
      *
      * @param id - The ID of the sprite to add. Must not conflict with existing sprites.
@@ -3097,8 +3072,6 @@ export class Map extends Camera {
         this.transform.setMinElevationForCurrentTile(0);
         this.transform.setElevation(0);
 
-        this._placementDirty = this.style && this.style._updatePlacement(this.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, transformUpdateResult.forcePlacementUpdate);
-
         if (transformUpdateResult.fireProjectionEvent) {
             this.fire(new Event('projectiontransition', transformUpdateResult.fireProjectionEvent));
         }
@@ -3124,13 +3097,6 @@ export class Map extends Camera {
 
         if (this.style && (this.style.hasTransitions() || crossFading)) {
             this._styleDirty = true;
-        }
-
-        if (this.style && !this._placementDirty) {
-            // Since no fade operations are in progress, we can release
-            // all tiles held for fading. If we didn't do this, the tiles
-            // would just sit in the SourceCaches until the next render
-            this.style._releaseSymbolFadeTiles();
         }
 
         // Schedule another render frame if it's needed.
@@ -3272,26 +3238,6 @@ export class Map extends Camera {
         if (this._showPadding === value) return;
         this._showPadding = value;
         this._update();
-    }
-
-    /**
-     * Gets and sets a Boolean indicating whether the map will render boxes
-     * around all symbols in the data source, revealing which symbols
-     * were rendered or which were hidden due to collisions.
-     * This information is useful for debugging.
-     */
-    get showCollisionBoxes(): boolean { return !!this._showCollisionBoxes; }
-    set showCollisionBoxes(value: boolean) {
-        if (this._showCollisionBoxes === value) return;
-        this._showCollisionBoxes = value;
-        if (value) {
-            // When we turn collision boxes on we have to generate them for existing tiles
-            // When we turn them off, there's no cost to leaving existing boxes in place
-            this.style._generateCollisionBoxes();
-        } else {
-            // Otherwise, call an update to remove collision boxes
-            this._update();
-        }
     }
 
     /**

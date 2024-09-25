@@ -10,7 +10,6 @@ import {
 import {Evented} from '../util/evented';
 import {Layout, Transitionable, Transitioning, Properties, PossiblyEvaluated, PossiblyEvaluatedPropertyValue} from './properties';
 
-import type {Bucket} from '../data/bucket';
 import type Point from '@mapbox/point-geometry';
 import type {FeatureFilter, FeatureState,
     LayerSpecification,
@@ -55,7 +54,6 @@ export abstract class StyleLayer extends Evented {
     readonly onAdd: ((map: Map) => void);
     readonly onRemove: ((map: Map) => void);
 
-    queryRadius?(bucket: Bucket): number;
     queryIntersectsFeature?(
         queryGeometry: Array<Point>,
         feature: VectorTileFeature,

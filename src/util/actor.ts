@@ -201,7 +201,7 @@ export class Actor implements IActor {
             if (task.error) {
                 resolveReject.reject(deserialize(task.error) as Error);
             } else {
-                resolveReject.resolve(deserialize(task.data));
+                resolveReject.resolve(deserialize(task.data) as any); // LEAN: TODO: why must cast to any here?
             }
             return;
         }

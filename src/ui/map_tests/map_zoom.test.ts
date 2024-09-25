@@ -84,10 +84,6 @@ test('recalculate zoom is done on the camera update transform', () => {
         clickTolerance: 4,
         transformCameraUpdate: ({zoom}) => ({zoom: zoom + 0.1})
     });
-    map.terrain = {
-        pointCoordinate: () => null,
-        getElevationForLngLatZoom: () => 1000
-    } as any;
     const canvas = map.getCanvas();
     simulate.dragWithMove(canvas, {x: 100, y: 100}, {x: 100, y: 150});
     map._renderTaskQueue.run();

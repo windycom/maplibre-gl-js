@@ -1,5 +1,4 @@
 import {extend} from '../util/util';
-import {Tile} from './tile';
 import type {FeatureState} from '@maplibre/maplibre-gl-style-spec';
 
 export type FeatureStates = {[featureId: string]: FeatureState};
@@ -97,13 +96,7 @@ export class SourceFeatureState {
         return reconciledState;
     }
 
-    initializeTileState(tile: Tile, painter: any) {
-        tile.setFeatureState(this.state, painter);
-    }
-
-    coalesceChanges(tiles: {
-        [_ in any]: Tile;
-    }, painter: any) {
+    coalesceChanges() {
         //track changes with full state objects, but only for features that got modified
         const featuresChanged: LayerFeatureStates = {};
 
@@ -146,12 +139,5 @@ export class SourceFeatureState {
 
         this.stateChanges = {};
         this.deletedStates = {};
-
-        if (Object.keys(featuresChanged).length === 0) return;
-
-        for (const id in tiles) {
-            const tile = tiles[id];
-            tile.setFeatureState(featuresChanged, painter);
-        }
     }
 }

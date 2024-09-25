@@ -2,9 +2,13 @@ import {Context} from '../gl/context';
 import {Mesh} from '../render/mesh';
 import {PosArray, TriangleIndexArray} from '../data/array_types.g';
 import {SegmentVector} from '../data/segment';
-import {NORTH_POLE_Y, SOUTH_POLE_Y} from '../render/subdivision';
 import {EXTENT} from '../data/extent';
 import posAttributes from '../data/pos_attributes';
+
+// Special pole vertices have coordinates -32768,-32768 for the north pole and 32767,32767 for the south pole.
+// First, find any *non-pole* vertices at those coordinates and move them slightly elsewhere.
+export const NORTH_POLE_Y = -32768;
+export const SOUTH_POLE_Y = 32767;
 
 const EXTENT_STENCIL_BORDER = EXTENT / 128;
 

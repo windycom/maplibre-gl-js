@@ -264,7 +264,6 @@ export class ImageSource extends Evented implements Source {
         // single tile.
         if (this.tileID && this.tileID.equals(tile.tileID.canonical)) {
             this.tiles[String(tile.tileID.wrap)] = tile;
-            tile.buckets = {};
         } else {
             tile.state = 'errored';
         }

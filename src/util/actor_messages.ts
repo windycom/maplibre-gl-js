@@ -1,9 +1,7 @@
-import type {LoadGeoJSONParameters} from '../source/geojson_worker_source';
 import type {TileParameters, WorkerDEMTileParameters, WorkerTileParameters, WorkerTileResult} from '../source/worker_source';
 import type {DEMData} from '../data/dem_data';
 import type {StyleImage} from '../style/style_image';
 import type {StyleGlyph} from '../style/style_glyph';
-import type {PluginState} from '../source/rtl_text_plugin_status';
 import type {LayerSpecification} from '@maplibre/maplibre-gl-style-spec';
 import type {OverscaledTileID} from '../source/tile_id';
 import type {GetResourceResponse, RequestParameters} from './ajax';
@@ -88,8 +86,6 @@ export const enum MessageType {
     getClusterExpansionZoom = 'GCEZ',
     getClusterChildren = 'GCC',
     getClusterLeaves = 'GCL',
-    loadData = 'LD',
-    getData = 'GD',
     loadTile = 'LT',
     reloadTile = 'RT',
     getGlyphs = 'GG',
@@ -97,7 +93,6 @@ export const enum MessageType {
     setImages = 'SI',
     setLayers = 'SL',
     updateLayers = 'UL',
-    syncRTLPluginState = 'SRPS',
     setReferrer = 'SR',
     removeSource = 'RS',
     removeMap = 'RM',
@@ -117,8 +112,6 @@ export type RequestResponseMessageMap = {
     [MessageType.getClusterExpansionZoom]: [ClusterIDAndSource, number];
     [MessageType.getClusterChildren]: [ClusterIDAndSource, Array<GeoJSON.Feature>];
     [MessageType.getClusterLeaves]: [GetClusterLeavesParams, Array<GeoJSON.Feature>];
-    [MessageType.loadData]: [LoadGeoJSONParameters, GeoJSONWorkerSourceLoadDataResult];
-    [MessageType.getData]: [LoadGeoJSONParameters, GeoJSON.GeoJSON];
     [MessageType.loadTile]: [WorkerTileParameters, WorkerTileResult];
     [MessageType.reloadTile]: [WorkerTileParameters, WorkerTileResult];
     [MessageType.getGlyphs]: [GetGlyphsParameters, GetGlyphsResponse];
@@ -126,7 +119,6 @@ export type RequestResponseMessageMap = {
     [MessageType.setImages]: [string[], void];
     [MessageType.setLayers]: [Array<LayerSpecification>, void];
     [MessageType.updateLayers]: [UpdateLayersParamaeters, void];
-    [MessageType.syncRTLPluginState]: [PluginState, PluginState];
     [MessageType.setReferrer]: [string, void];
     [MessageType.removeSource]: [RemoveSourceParams, void];
     [MessageType.removeMap]: [undefined, void];
