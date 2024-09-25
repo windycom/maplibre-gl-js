@@ -8,6 +8,8 @@ import {SingleCollisionBox} from '../../../src/data/bucket/symbol_bucket';
 import {EXTENT} from '../../../src/data/extent';
 import {MercatorTransform} from '../../../src/geo/projection/mercator_transform';
 import {mat4} from 'gl-matrix';
+import {GlobeProjection} from '../../../src/geo/projection/globe';
+import {GlobeTransform} from '../../../src/geo/projection/globe_transform';
 
 type TestSymbol = {
     collisionBox: SingleCollisionBox;
@@ -39,11 +41,33 @@ function splitmix32(a) {
 export default class SymbolCollisionBox extends Benchmark {
     private _transform: ITransform;
     private _symbols: Array<TestSymbol>;
+    private _useGlobeProjection: boolean = false;
+
+    constructor(useGlobeProjection: boolean) {
+        super();
+        this._useGlobeProjection = useGlobeProjection;
+    }
+
+    private _createTransform() {
+        if (this._useGlobeProjection) {
+            const projection = new GlobeProjection();
+            return {
+                transform: new GlobeTransform(projection, true),
+                calculatePosMatrix: (_tileID: UnwrappedTileID) => { return undefined; },
+            };
+        } else {
+            const tr = new MercatorTransform(0, 22, 0, 60, true);
+            return {
+                transform: tr,
+                calculatePosMatrix: (tileID: UnwrappedTileID) => { return tr.calculatePosMatrix(tileID, false); },
+            };
+        }
+    }
 
     async setup(): Promise<void> {
-        const tr = new MercatorTransform(0, 22, 0, 60, true);
-        this._transform = tr;
-        tr.resize(1024, 1024);
+        const {transform, calculatePosMatrix} = this._createTransform();
+        this._transform = transform;
+        transform.resize(1024, 1024);
         const unwrappedTileID = new UnwrappedTileID(0, new CanonicalTileID(0, 0, 0));
 
         const rng = splitmix32(0xdeadbeef);
@@ -74,7 +98,7 @@ export default class SymbolCollisionBox extends Benchmark {
                     rndRange(-20, 20)
                 ],
                 shift: rng() > 0.5 ? new Point(rndRange(-20, 20), rndRange(-20, 20)) : undefined,
-                simpleProjectionMatrix: tr.calculatePosMatrix(unwrappedTileID, false),
+                simpleProjectionMatrix: calculatePosMatrix(unwrappedTileID),
             });
         }
     }
