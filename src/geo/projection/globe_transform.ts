@@ -6,15 +6,13 @@ import {angleToRotateBetweenVectors2D, clamp, createIdentityMat4f64, createMat4f
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import Point from '@mapbox/point-geometry';
 import {browser} from '../../util/browser';
-import {Terrain} from '../../render/terrain';
 import {GlobeProjection, globeConstants} from './globe';
 import {MercatorCoordinate} from '../mercator_coordinate';
-import {PointProjection} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {CoveringTilesOptions, CoveringZoomOptions, IReadonlyTransform, ITransform, TransformUpdateResult} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
 import {tileCoordinatesToLocation, tileCoordinatesToMercatorCoordinates} from './mercator_utils';
-import {angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, projectTileCoordinatesToSphere, sphereSurfacePointToCoordinates} from './globe_utils';
+import {angularCoordinatesToSurfaceVector, getGlobeRadiusPixels, getZoomAdjustment, mercatorCoordinatesToAngularCoordinatesRadians, sphereSurfacePointToCoordinates} from './globe_utils';
 import {EXTENT} from '../../data/extent';
 import type {ProjectionData} from './projection_data';
 import {globeCoveringTiles} from './globe_covering_tiles';
@@ -586,31 +584,6 @@ export class GlobeTransform implements ITransform {
         return this.getCircleRadiusCorrection() / Math.cos(angular[1]);
     }
 
-    public projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection {
-        if (!this._globeRendering) {
-            return this._mercatorTransform.projectTileCoordinates(x, y, unwrappedTileID, getElevation);
-        }
-
-        const canonical = unwrappedTileID.canonical;
-        const spherePos = projectTileCoordinatesToSphere(x, y, canonical.x, canonical.y, canonical.z);
-        const elevation = getElevation ? getElevation(x, y) : 0.0;
-        const vectorMultiplier = 1.0 + elevation / earthRadius;
-        const pos: vec4 = [spherePos[0] * vectorMultiplier, spherePos[1] * vectorMultiplier, spherePos[2] * vectorMultiplier, 1];
-        vec4.transformMat4(pos, pos, this._globeViewProjMatrixNoCorrection);
-
-        // Also check whether the point projects to the backfacing side of the sphere.
-        const plane = this._cachedClippingPlane;
-        // dot(position on sphere, occlusion plane equation)
-        const dotResult = plane[0] * spherePos[0] + plane[1] * spherePos[1] + plane[2] * spherePos[2] + plane[3];
-        const isOccluded = dotResult < 0.0;
-
-        return {
-            point: new Point(pos[0] / pos[3], pos[1] / pos[3]),
-            signedDistanceFromCamera: pos[3],
-            isOccluded
-        };
-    }
-
     private _calcMatrices(): void {
         if (!this._helper._width || !this._helper._height) {
             return;
@@ -703,8 +676,8 @@ export class GlobeTransform implements ITransform {
         return globeCoveringTiles(this._cachedFrustum, this._cachedClippingPlane, cameraCoord, centerCoord, coveringZ, options);
     }
 
-    recalculateZoom(terrain: Terrain): void {
-        this._mercatorTransform.recalculateZoom(terrain);
+    recalculateZoom(): void {
+        this._mercatorTransform.recalculateZoom();
         this.apply(this._mercatorTransform);
     }
 
@@ -935,17 +908,12 @@ export class GlobeTransform implements ITransform {
         this.setZoom(this.zoom + getZoomAdjustment(oldLat, this.center.lat));
     }
 
-    locationToScreenPoint(lnglat: LngLat, terrain?: Terrain): Point {
+    locationToScreenPoint(lnglat: LngLat): Point {
         if (!this._globeRendering) {
-            return this._mercatorTransform.locationToScreenPoint(lnglat, terrain);
+            return this._mercatorTransform.locationToScreenPoint(lnglat);
         }
 
         const pos = angularCoordinatesToSurfaceVector(lnglat);
-
-        if (terrain) {
-            const elevation = terrain.getElevationForLngLatZoom(lnglat, this._helper._tileZoom);
-            vec3.scale(pos, pos, 1.0 + elevation / earthRadius);
-        }
 
         return this._projectSurfacePointToScreen(pos);
     }
@@ -965,27 +933,27 @@ export class GlobeTransform implements ITransform {
         );
     }
 
-    screenPointToMercatorCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
-        if (!this._globeRendering || terrain) {
+    screenPointToMercatorCoordinate(p: Point): MercatorCoordinate {
+        if (!this._globeRendering) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
-            return this._mercatorTransform.screenPointToMercatorCoordinate(p, terrain);
+            return this._mercatorTransform.screenPointToMercatorCoordinate(p);
         }
         return MercatorCoordinate.fromLngLat(this.unprojectScreenPoint(p));
     }
 
-    screenPointToLocation(p: Point, terrain?: Terrain): LngLat {
-        if (!this._globeRendering || terrain) {
+    screenPointToLocation(p: Point): LngLat {
+        if (!this._globeRendering) {
             // Mercator has terrain handling implemented properly and since terrain
             // simply draws tile coordinates into a special framebuffer, this works well even for globe.
-            return this._mercatorTransform.screenPointToLocation(p, terrain);
+            return this._mercatorTransform.screenPointToLocation(p);
         }
         return this.unprojectScreenPoint(p);
     }
 
-    isPointOnMapSurface(p: Point, terrain?: Terrain): boolean {
+    isPointOnMapSurface(p: Point): boolean {
         if (!this._globeRendering) {
-            return this._mercatorTransform.isPointOnMapSurface(p, terrain);
+            return this._mercatorTransform.isPointOnMapSurface(p);
         }
 
         const rayOrigin = this._cameraPosition;

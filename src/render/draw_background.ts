@@ -32,7 +32,7 @@ export function drawBackground(painter: Painter, sourceCache: SourceCache, layer
     const depthMode = painter.depthModeForSublayer(0, pass === 'opaque' ? DepthMode.ReadWrite : DepthMode.ReadOnly);
     const colorMode = painter.colorModeForRenderPass();
     const program = painter.useProgram(image ? 'backgroundPattern' : 'background');
-    const tileIDs = coords ? coords : transform.coveringTiles({tileSize, terrain: painter.style.map.terrain});
+    const tileIDs = coords ? coords : transform.coveringTiles({tileSize});
 
     if (image) {
         context.activeTexture.set(gl.TEXTURE0);
@@ -47,7 +47,6 @@ export function drawBackground(painter: Painter, sourceCache: SourceCache, layer
         const uniformValues = image ?
             backgroundPatternUniformValues(opacity, painter, image, {tileID, tileSize}, crossfade) :
             backgroundUniformValues(opacity, color);
-        const terrainData = painter.style.map.terrain && painter.style.map.terrain.getTerrainData(tileID);
 
         // For globe rendering, background uses tile meshes *without* borders and no stencil clipping.
         // This works assuming the tileIDs list contains only tiles of the same zoom level.
@@ -60,7 +59,7 @@ export function drawBackground(painter: Painter, sourceCache: SourceCache, layer
 
         const mesh = projection.getMeshFromTileID(context, tileID.canonical, false, true, 'raster');
         program.draw(context, gl.TRIANGLES, depthMode, stencilMode, colorMode, CullFaceMode.backCCW,
-            uniformValues, terrainData, projectionData, layer.id,
+            uniformValues, projectionData, layer.id,
             mesh.vertexBuffer, mesh.indexBuffer, mesh.segments);
     }
 }

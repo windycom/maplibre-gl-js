@@ -75,7 +75,6 @@ function drawDebugTile(painter: Painter, sourceCache: SourceCache, coord: Oversc
     const stencilMode = StencilMode.disabled;
     const colorMode = painter.colorModeForRenderPass();
     const id = '$debug';
-    const terrainData = painter.style.map.terrain && painter.style.map.terrain.getTerrainData(coord);
 
     context.activeTexture.set(gl.TEXTURE0);
 
@@ -94,10 +93,10 @@ function drawDebugTile(painter: Painter, sourceCache: SourceCache, coord: Oversc
     const projectionData = painter.transform.getProjectionData(coord);
 
     program.draw(context, gl.TRIANGLES, depthMode, stencilMode, ColorMode.alphaBlended, CullFaceMode.disabled,
-        debugUniformValues(Color.transparent, scaleRatio), null, projectionData, id,
+        debugUniformValues(Color.transparent, scaleRatio), projectionData, id,
         painter.debugBuffer, painter.quadTriangleIndexBuffer, painter.debugSegments);
     program.draw(context, gl.LINE_STRIP, depthMode, stencilMode, colorMode, CullFaceMode.disabled,
-        debugUniformValues(Color.red), terrainData, projectionData, id,
+        debugUniformValues(Color.red), projectionData, id,
         painter.debugBuffer, painter.tileBorderIndexBuffer, painter.debugSegments);
 }
 

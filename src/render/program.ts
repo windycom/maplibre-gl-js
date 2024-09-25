@@ -12,8 +12,6 @@ import type {ColorMode} from '../gl/color_mode';
 import type {CullFaceMode} from '../gl/cull_face_mode';
 import type {UniformBindings, UniformValues, UniformLocations} from './uniform_binding';
 import type {BinderUniform} from '../data/program_configuration';
-import {terrainPreludeUniforms, TerrainPreludeUniformsType} from './program/terrain_program';
-import type {TerrainData} from '../render/terrain';
 import {projectionObjectToUniformMap, ProjectionPreludeUniformsType, projectionUniforms} from './program/projection_program';
 import type {ProjectionData} from '../geo/projection/projection_data';
 
@@ -39,7 +37,6 @@ export class Program<Us extends UniformBindings> {
     attributes: {[_: string]: number};
     numAttributes: number;
     fixedUniforms: Us;
-    terrainUniforms: TerrainPreludeUniformsType;
     projectionUniforms: ProjectionPreludeUniformsType;
     binderUniforms: Array<BinderUniform>;
     failedToCreate: boolean;
@@ -49,7 +46,6 @@ export class Program<Us extends UniformBindings> {
         configuration: ProgramConfiguration,
         fixedUniforms: (b: Context, a: UniformLocations) => Us,
         showOverdrawInspector: boolean,
-        hasTerrain: boolean,
         projectionPrelude: PreparedShader,
         projectionDefine: string) {
 
@@ -74,9 +70,6 @@ export class Program<Us extends UniformBindings> {
         const defines = configuration ? configuration.defines() : [];
         if (showOverdrawInspector) {
             defines.push('#define OVERDRAW_INSPECTOR;');
-        }
-        if (hasTerrain) {
-            defines.push('#define TERRAIN3D;');
         }
         if (projectionDefine) {
             defines.push(projectionDefine);
@@ -145,7 +138,6 @@ export class Program<Us extends UniformBindings> {
         }
 
         this.fixedUniforms = fixedUniforms(context, uniformLocations);
-        this.terrainUniforms = terrainPreludeUniforms(context, uniformLocations);
         this.projectionUniforms = projectionUniforms(context, uniformLocations);
         this.binderUniforms = configuration ? configuration.getUniforms(context, uniformLocations) : [];
     }
@@ -157,7 +149,6 @@ export class Program<Us extends UniformBindings> {
         colorMode: Readonly<ColorMode>,
         cullFaceMode: Readonly<CullFaceMode>,
         uniformValues: UniformValues<Us>,
-        terrain: TerrainData,
         projectionData: ProjectionData,
         layerID: string,
         layoutVertexBuffer: VertexBuffer,
@@ -179,17 +170,6 @@ export class Program<Us extends UniformBindings> {
         context.setStencilMode(stencilMode);
         context.setColorMode(colorMode);
         context.setCullFace(cullFaceMode);
-
-        // set variables used by the 3d functions defined in _prelude.vertex.glsl
-        if (terrain) {
-            context.activeTexture.set(gl.TEXTURE2);
-            gl.bindTexture(gl.TEXTURE_2D, terrain.depthTexture);
-            context.activeTexture.set(gl.TEXTURE3);
-            gl.bindTexture(gl.TEXTURE_2D, terrain.texture);
-            for (const name in this.terrainUniforms) {
-                this.terrainUniforms[name].set(terrain[name]);
-            }
-        }
 
         if (projectionData) {
             for (const fieldName in projectionData) {

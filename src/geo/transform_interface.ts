@@ -5,8 +5,6 @@ import Point from '@mapbox/point-geometry';
 import {mat4, mat2, vec3} from 'gl-matrix';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID} from '../source/tile_id';
 import type {PaddingOptions} from './edge_insets';
-import {Terrain} from '../render/terrain';
-import {PointProjection} from '../symbol/projection';
 import {MapProjectionEvent} from '../ui/events';
 import type {ProjectionData} from './projection/projection_data';
 
@@ -37,10 +35,6 @@ export type CoveringTilesOptions = CoveringZoomOptions & {
      * its zoom set to the overscaled greater zoom. When false, such tiles will have zoom set to `maxzoom`.
      */
     reparseOverscaled?: boolean;
-    /**
-     * When terrain is present, tile visibility will be computed in regards to the min and max elevations for each tile.
-     */
-    terrain?: Terrain;
 };
 
 export type TransformUpdateResult = {
@@ -185,14 +179,6 @@ interface ITransformMutators {
     interpolatePadding(start: PaddingOptions, target: PaddingOptions, t: number): void;
 
     /**
-     * This method works in combination with freezeElevation activated.
-     * freezeElevation is enabled during map-panning because during this the camera should sit in constant height.
-     * After panning finished, call this method to recalculate the zoom level for the current camera-height in current terrain.
-     * @param terrain - the terrain
-     */
-    recalculateZoom(terrain: Terrain): void;
-
-    /**
      * Set's the transform's center so that the given point on screen is at the given world coordinates.
      * @param lnglat - Desired world coordinates of the point.
      * @param point - The screen point that should lie at the given coordinates.
@@ -302,28 +288,25 @@ export interface IReadonlyTransform extends ITransformGetters {
      * @internal
      * Given a LngLat location, return the screen point that corresponds to it.
      * @param lnglat - location
-     * @param terrain - optional terrain
      * @returns screen point
      */
-    locationToScreenPoint(lnglat: LngLat, terrain?: Terrain): Point;
+    locationToScreenPoint(lnglat: LngLat): Point;
 
     /**
      * @internal
      * Given a point on screen, return its LngLat location.
      * @param p - screen point
-     * @param terrain - optional terrain
      * @returns lnglat location
      */
-    screenPointToLocation(p: Point, terrain?: Terrain): LngLat;
+    screenPointToLocation(p: Point): LngLat;
 
     /**
      * @internal
      * Given a point on screen, return its mercator coordinate.
      * @param p - the point
-     * @param terrain - optional terrain
      * @returns lnglat
      */
-    screenPointToMercatorCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate;
+    screenPointToMercatorCoordinate(p: Point): MercatorCoordinate;
 
     /**
      * @internal
@@ -344,9 +327,8 @@ export interface IReadonlyTransform extends ITransformGetters {
      * Returns whether the specified screen point lies on the map.
      * May return false if, for example, the point is above the map's horizon, or if doesn't lie on the planet's surface if globe is enabled.
      * @param p - The point's coordinates.
-     * @param terrain - Optional terrain.
      */
-    isPointOnMapSurface(p: Point, terrain?: Terrain): boolean;
+    isPointOnMapSurface(p: Point): boolean;
 
     /**
      * Get center lngLat and zoom to ensure that longitude and latitude bounds are respected and regions beyond the map bounds are not displayed.
@@ -465,12 +447,6 @@ export interface IReadonlyTransform extends ITransformGetters {
      * @returns A new vector with the transformed light direction.
      */
     transformLightDirection(dir: vec3): vec3;
-
-    /**
-     * @internal
-     * Projects a point in tile coordinates to clip space. Used in symbol rendering.
-     */
-    projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection;
 
     /**
      * Returns a matrix that will place, rotate and scale a model to display at the given location and altitude

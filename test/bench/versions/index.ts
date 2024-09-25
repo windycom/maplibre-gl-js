@@ -1,8 +1,4 @@
-import locationsWithTileID from '../lib/locations_with_tile_id';
-import styleBenchmarkLocations from '../data/style-benchmark-locations.json' with {type: 'json'};
 import Layout from '../benchmarks/layout';
-import Placement from '../benchmarks/placement';
-import SymbolLayout from '../benchmarks/symbol_layout';
 import WorkerTransfer from '../benchmarks/worker_transfer';
 import Paint from '../benchmarks/paint';
 import PaintStates from '../benchmarks/paint_states';
@@ -21,10 +17,6 @@ import CustomLayer from '../benchmarks/customlayer';
 import MapIdle from '../benchmarks/map_idle';
 
 import {getGlobalWorkerPool} from '../../../src/util/global_worker_pool';
-import SymbolCollisionBox from '../benchmarks/symbol_collision_box';
-import Subdivide from '../benchmarks/subdivide';
-
-const styleLocations = locationsWithTileID(styleBenchmarkLocations.features  as GeoJSON.Feature<GeoJSON.Point>[]).filter(v => v.zoom < 15); // the used maptiler sources have a maxzoom of 14
 
 (window as any).maplibreglBenchmarks = (window as any).maplibreglBenchmarks || {};
 
@@ -44,7 +36,6 @@ register('Paint', new Paint(style, locations));
 register('QueryPoint', new QueryPoint(style, locations));
 register('QueryBox', new QueryBox(style, locations));
 register('Layout', new Layout(style));
-register('Placement', new Placement(style, locations));
 register('Validate', new Validate(style));
 register('StyleLayerCreate', new StyleLayerCreate(style));
 register('FunctionCreate', new FunctionCreate(style));
@@ -69,14 +60,11 @@ register('LayerSymbolWithIcons', new LayerSymbolWithIcons());
 register('LayerTextWithVariableAnchor', new LayerTextWithVariableAnchor());
 register('LayerSymbolWithSortKey', new LayerSymbolWithSortKey());
 register('Load', new Load());
-register('SymbolLayout', new SymbolLayout(style, styleLocations.map(location => location.tileID[0])));
 register('FilterCreate', new FilterCreate());
 register('FilterEvaluate', new FilterEvaluate());
 register('HillshadeLoad', new HillshadeLoad());
 register('CustomLayer', new CustomLayer());
 register('MapIdle', new MapIdle());
-register('SymbolCollisionBox', new SymbolCollisionBox());
-register('Subdivide', new Subdivide());
 
 Promise.resolve().then(() => {
     // Ensure the global worker pool is never drained. Browsers have resource limits

@@ -4,7 +4,6 @@ import {register} from '../util/web_worker_transfer';
 import {PossiblyEvaluatedPropertyValue} from '../style/properties';
 import {StructArrayLayout1f4, StructArrayLayout2f8, StructArrayLayout4f16, PatternLayoutArray} from './array_types.g';
 import {clamp} from '../util/util';
-import {patternAttributes} from './bucket/pattern_attributes';
 import {EvaluationParameters} from '../style/evaluation_parameters';
 import {FeaturePositionMap} from './feature_position_map';
 import {Uniform, Uniform1f, UniformColor, Uniform4f} from '../render/uniform_binding';
@@ -381,8 +380,8 @@ class CrossFadedCompositeBinder implements AttributeBinder {
 
     upload(context: Context) {
         if (this.zoomInPaintVertexArray && this.zoomInPaintVertexArray.arrayBuffer && this.zoomOutPaintVertexArray && this.zoomOutPaintVertexArray.arrayBuffer) {
-            this.zoomInPaintVertexBuffer = context.createVertexBuffer(this.zoomInPaintVertexArray, patternAttributes.members, this.expression.isStateDependent);
-            this.zoomOutPaintVertexBuffer = context.createVertexBuffer(this.zoomOutPaintVertexArray, patternAttributes.members, this.expression.isStateDependent);
+            this.zoomInPaintVertexBuffer = context.createVertexBuffer(this.zoomInPaintVertexArray, [], this.expression.isStateDependent);
+            this.zoomOutPaintVertexBuffer = context.createVertexBuffer(this.zoomOutPaintVertexArray, [], this.expression.isStateDependent);
         }
     }
 
@@ -527,10 +526,6 @@ export class ProgramConfiguration {
             if (binder instanceof SourceExpressionBinder || binder instanceof CompositeExpressionBinder) {
                 for (let i = 0; i < binder.paintVertexAttributes.length; i++) {
                     result.push(binder.paintVertexAttributes[i].name);
-                }
-            } else if (binder instanceof CrossFadedCompositeBinder) {
-                for (let i = 0; i < patternAttributes.members.length; i++) {
-                    result.push(patternAttributes.members[i].name);
                 }
             }
         }

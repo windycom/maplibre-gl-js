@@ -36,7 +36,9 @@ describe('test min build', () => {
         const decreaseQuota = 4096;
 
         // feel free to update this value after you've checked that it has changed on purpose :-)
-        const expectedBytes = 879451;
+
+        // const expectedBytes = 879451; // <-- baseline
+        const expectedBytes = 851946; // <-- remove draw* from painter
 
         expect(actualBytes).toBeLessThan(expectedBytes + increaseQuota);
         expect(actualBytes).toBeGreaterThan(expectedBytes - decreaseQuota);

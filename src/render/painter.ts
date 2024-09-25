@@ -7,7 +7,6 @@ import {RasterBoundsArray, PosArray, TriangleIndexArray, LineStripIndexArray} fr
 import rasterBoundsAttributes from '../data/raster_bounds_attributes';
 import posAttributes from '../data/pos_attributes';
 import {ProgramConfiguration} from '../data/program_configuration';
-import {CrossTileSymbolIndex} from '../symbol/cross_tile_symbol_index';
 import {shaders} from '../shaders/shaders';
 import {Program} from './program';
 import {programUniforms} from './program/program_uniforms';
@@ -18,18 +17,10 @@ import {ColorMode} from '../gl/color_mode';
 import {CullFaceMode} from '../gl/cull_face_mode';
 import {Texture} from './texture';
 import {Color} from '@maplibre/maplibre-gl-style-spec';
-import {drawSymbols} from './draw_symbol';
-import {drawCircles} from './draw_circle';
-import {drawHeatmap} from './draw_heatmap';
-import {drawLine} from './draw_line';
-import {drawFill} from './draw_fill';
-import {drawFillExtrusion} from './draw_fill_extrusion';
-import {drawHillshade} from './draw_hillshade';
 import {drawRaster} from './draw_raster';
 import {drawBackground} from './draw_background';
 import {drawDebug, drawDebugPadding, selectDebugSource} from './draw_debug';
 import {drawCustom} from './draw_custom';
-import {drawDepth, drawCoords} from './draw_terrain';
 import {OverscaledTileID} from '../source/tile_id';
 import {drawSky, drawAtmosphere} from './draw_sky';
 import {Mesh} from './mesh';
@@ -39,14 +30,11 @@ import type {IReadonlyTransform} from '../geo/transform_interface';
 import type {Style} from '../style/style';
 import type {StyleLayer} from '../style/style_layer';
 import type {CrossFaded} from '../style/properties';
-import type {LineAtlas} from './line_atlas';
 import type {ImageManager} from './image_manager';
-import type {GlyphManager} from './glyph_manager';
 import type {VertexBuffer} from '../gl/vertex_buffer';
 import type {IndexBuffer} from '../gl/index_buffer';
 import type {DepthRangeType, DepthMaskType, DepthFuncType} from '../gl/types';
 import type {ResolvedImage} from '@maplibre/maplibre-gl-style-spec';
-import type {RenderToTexture} from './render_to_texture';
 import type {ProjectionData} from '../geo/projection/projection_data';
 
 export type RenderPass = 'offscreen' | 'opaque' | 'translucent';
@@ -68,7 +56,6 @@ type PainterOptions = {
 export class Painter {
     context: Context;
     transform: IReadonlyTransform;
-    renderToTexture: RenderToTexture;
     _tileTextures: {
         [_: number]: Array<Texture>;
     };
@@ -96,9 +83,7 @@ export class Painter {
     stencilClearMode: StencilMode;
     style: Style;
     options: PainterOptions;
-    lineAtlas: LineAtlas;
     imageManager: ImageManager;
-    glyphManager: GlyphManager;
     depthRangeFor3D: DepthRangeType;
     opaquePassCutoff: number;
     renderPass: RenderPass;
@@ -108,20 +93,14 @@ export class Painter {
     id: string;
     _showOverdrawInspector: boolean;
     cache: {[_: string]: Program<any>};
-    crossTileSymbolIndex: CrossTileSymbolIndex;
     symbolFadeChange: number;
     debugOverlayTexture: Texture;
     debugOverlayCanvas: HTMLCanvasElement;
-    // this object stores the current camera-matrix and the last render time
-    // of the terrain-facilitators. e.g. depth & coords framebuffers
-    // every time the camera-matrix changes the terrain-facilitators will be redrawn.
-    terrainFacilitator: {dirty: boolean; matrix: mat4; renderTime: number};
 
     constructor(gl: WebGLRenderingContext | WebGL2RenderingContext, transform: IReadonlyTransform) {
         this.context = new Context(gl);
         this.transform = transform;
         this._tileTextures = {};
-        this.terrainFacilitator = {dirty: true, matrix: mat4.identity(new Float64Array(16) as any), renderTime: 0};
 
         this.setup();
 
@@ -129,8 +108,6 @@ export class Painter {
         // This is implemented using the WebGL depth buffer.
         this.numSublayers = SourceCache.maxUnderzooming + SourceCache.maxOverzooming + 1;
         this.depthEpsilon = 1 / Math.pow(2, 16);
-
-        this.crossTileSymbolIndex = new CrossTileSymbolIndex();
     }
 
     /*
@@ -243,7 +220,7 @@ export class Painter {
         // Note: we force a simple mercator projection for the shader, since we want to draw a fullscreen quad.
         this.useProgram('clippingMask', null, true).draw(context, gl.TRIANGLES,
             DepthMode.disabled, this.stencilClearMode, ColorMode.disabled, CullFaceMode.disabled,
-            null, null, projectionData,
+            null, projectionData,
             '$clipping', this.viewportBuffer,
             this.quadTriangleIndexBuffer, this.viewportSegments);
     }
@@ -293,7 +270,6 @@ export class Painter {
         // tiles are usually supplied in ascending order of z, then y, then x
         for (const tileID of tileIDs) {
             const stencilRef = tileStencilRefs[tileID.key];
-            const terrainData = this.style.map.terrain && this.style.map.terrain.getTerrainData(tileID);
 
             const mesh = projection.getMeshFromTileID(this.context, tileID.canonical, useBorders, true, 'stencil');
 
@@ -303,7 +279,7 @@ export class Painter {
                 // Tests will always pass, and ref value will be written to stencil buffer.
                 new StencilMode({func: gl.ALWAYS, mask: 0}, stencilRef, 0xFF, gl.KEEP, gl.KEEP, gl.REPLACE),
                 ColorMode.disabled, renderToTexture ? CullFaceMode.disabled : CullFaceMode.backCCW, null,
-                terrainData, projectionData, '$clipping', mesh.vertexBuffer,
+                projectionData, '$clipping', mesh.vertexBuffer,
                 mesh.indexBuffer, mesh.segments);
         }
     }
@@ -427,9 +403,7 @@ export class Painter {
         this.style = style;
         this.options = options;
 
-        this.lineAtlas = style.lineAtlas;
         this.imageManager = style.imageManager;
-        this.glyphManager = style.glyphManager;
 
         this.symbolFadeChange = style.placement.symbolFadeChange(browser.now());
 
@@ -460,14 +434,6 @@ export class Painter {
                 this.opaquePassCutoff = i;
                 break;
             }
-        }
-
-        this.maybeDrawDepthAndCoords(false);
-
-        if (this.renderToTexture) {
-            this.renderToTexture.prepareForRender(this.style, this.transform.zoom);
-            // this is disabled, because render-to-texture is rendering all layers from bottom to top.
-            this.opaquePassCutoff = 0;
         }
 
         // Offscreen pass ===============================================
@@ -508,17 +474,15 @@ export class Painter {
 
         // Opaque pass ===============================================
         // Draw opaque layers top-to-bottom first.
-        if (!this.renderToTexture) {
-            this.renderPass = 'opaque';
+        this.renderPass = 'opaque';
 
-            for (this.currentLayer = layerIds.length - 1; this.currentLayer >= 0; this.currentLayer--) {
-                const layer = this.style._layers[layerIds[this.currentLayer]];
-                const sourceCache = sourceCaches[layer.source];
-                const coords = coordsAscending[layer.source];
+        for (this.currentLayer = layerIds.length - 1; this.currentLayer >= 0; this.currentLayer--) {
+            const layer = this.style._layers[layerIds[this.currentLayer]];
+            const sourceCache = sourceCaches[layer.source];
+            const coords = coordsAscending[layer.source];
 
-                this._renderTileClippingMasks(layer, coords, false);
-                this.renderLayer(this, sourceCache, layer, coords);
-            }
+            this._renderTileClippingMasks(layer, coords, false);
+            this.renderLayer(this, sourceCache, layer, coords);
         }
 
         // Translucent pass ===============================================
@@ -528,8 +492,6 @@ export class Painter {
         for (this.currentLayer = 0; this.currentLayer < layerIds.length; this.currentLayer++) {
             const layer = this.style._layers[layerIds[this.currentLayer]];
             const sourceCache = sourceCaches[layer.source];
-
-            if (this.renderToTexture && this.renderToTexture.renderLayer(layer)) continue;
 
             // For symbol layers in the translucent pass, we add extra tiles to the renderable set
             // for cross-tile symbol fading. Symbol layers don't use tile clipping, so no need to render
@@ -561,61 +523,12 @@ export class Painter {
         this.context.setDefault();
     }
 
-    /**
-     * Update the depth and coords framebuffers, if the contents of those frame buffers is out of date.
-     * If requireExact is false, then the contents of those frame buffers is not updated if it is close
-     * to accurate (that is, the camera has not moved much since it was updated last).
-     */
-    maybeDrawDepthAndCoords(requireExact: boolean) {
-        if (!this.style || !this.style.map || !this.style.map.terrain) {
-            return;
-        }
-        const prevMatrix = this.terrainFacilitator.matrix;
-        const currMatrix = this.transform.modelViewProjectionMatrix;
-
-        // Update coords/depth-framebuffer on camera movement, or tile reloading
-        let doUpdate = this.terrainFacilitator.dirty;
-        doUpdate ||= requireExact ? !mat4.exactEquals(prevMatrix, currMatrix) : !mat4.equals(prevMatrix, currMatrix);
-        doUpdate ||= this.style.map.terrain.sourceCache.anyTilesAfterTime(this.terrainFacilitator.renderTime);
-
-        if (!doUpdate) {
-            return;
-        }
-
-        mat4.copy(prevMatrix, currMatrix);
-        this.terrainFacilitator.renderTime = Date.now();
-        this.terrainFacilitator.dirty = false;
-        drawDepth(this, this.style.map.terrain);
-        drawCoords(this, this.style.map.terrain);
-    }
-
     renderLayer(painter: Painter, sourceCache: SourceCache, layer: StyleLayer, coords: Array<OverscaledTileID>) {
         if (layer.isHidden(this.transform.zoom)) return;
         if (layer.type !== 'background' && layer.type !== 'custom' && !(coords || []).length) return;
         this.id = layer.id;
 
         switch (layer.type) {
-            case 'symbol':
-                drawSymbols(painter, sourceCache, layer as any, coords, this.style.placement.variableOffsets);
-                break;
-            case 'circle':
-                drawCircles(painter, sourceCache, layer as any, coords);
-                break;
-            case 'heatmap':
-                drawHeatmap(painter, sourceCache, layer as any, coords);
-                break;
-            case 'line':
-                drawLine(painter, sourceCache, layer as any, coords);
-                break;
-            case 'fill':
-                drawFill(painter, sourceCache, layer as any, coords);
-                break;
-            case 'fill-extrusion':
-                drawFillExtrusion(painter, sourceCache, layer as any, coords);
-                break;
-            case 'hillshade':
-                drawHillshade(painter, sourceCache, layer as any, coords);
-                break;
             case 'raster':
                 drawRaster(painter, sourceCache, layer as any, coords);
                 break;
@@ -666,7 +579,6 @@ export class Painter {
      */
     useProgram(name: string, programConfiguration?: ProgramConfiguration | null, forceSimpleProjection: boolean = false): Program<any> {
         this.cache = this.cache || {};
-        const useTerrain = !!this.style.map.terrain;
 
         const projection = this.style.projection;
 
@@ -676,9 +588,8 @@ export class Painter {
 
         const configurationKey = (programConfiguration ? programConfiguration.cacheKey : '');
         const overdrawKey = (this._showOverdrawInspector ? '/overdraw' : '');
-        const terrainKey = (useTerrain ? '/terrain' : '');
 
-        const key = name + configurationKey + projectionKey + overdrawKey + terrainKey;
+        const key = name + configurationKey + projectionKey + overdrawKey;
 
         if (!this.cache[key]) {
             this.cache[key] = new Program(
@@ -687,7 +598,6 @@ export class Painter {
                 programConfiguration,
                 programUniforms[name],
                 this._showOverdrawInspector,
-                useTerrain,
                 projectionPrelude,
                 projectionDefine
             );

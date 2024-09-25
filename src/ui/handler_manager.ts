@@ -141,7 +141,6 @@ export class HandlerManager {
     _handlersById: {[x: string]: Handler};
     _updatingCamera: boolean;
     _changes: Array<[HandlerResult, EventsInProgress, {[handlerName: string]: Event}]>;
-    _terrainMovement: boolean;
     _zoom: {handlerName: string};
     _previousActiveHandlers: {[x: string]: Handler};
     _listeners: Array<[Window | Document | HTMLElement, string, {
@@ -485,9 +484,8 @@ export class HandlerManager {
         deactivatedHandlers: {[handlerName: string]: Event}) {
         const map = this._map;
         const tr = map._getTransformForUpdate();
-        const terrain = map.terrain;
 
-        if (!hasChange(combinedResult) && !(terrain && this._terrainMovement)) {
+        if (!hasChange(combinedResult)) {
             return this._fireEvents(combinedEventsInProgress, deactivatedHandlers, true);
         }
 
@@ -501,10 +499,6 @@ export class HandlerManager {
         }
 
         around = around || map.transform.centerPoint;
-
-        if (terrain && !tr.isPointOnMapSurface(around)) {
-            around = tr.centerPoint;
-        }
 
         const deltasForHelper: MapControlsDeltas = {
             panDelta,
@@ -520,32 +514,10 @@ export class HandlerManager {
         }
         const preZoomAroundLoc = tr.screenPointToLocation(panDelta ? around.sub(panDelta) : around);
 
-        if (!terrain) {
-            // Apply zoom, bearing, pitch
-            this._map.cameraHelper.handleMapControlsPitchBearingZoom(deltasForHelper, tr);
-            // Apply panning
-            this._map.cameraHelper.handleMapControlsPan(deltasForHelper, tr, preZoomAroundLoc);
-        } else {
-            // Apply zoom, bearing, pitch
-            this._map.cameraHelper.handleMapControlsPitchBearingZoom(deltasForHelper, tr);
-            // when 3d-terrain is enabled act a little different:
-            //    - dragging do not drag the picked point itself, instead it drags the map by pixel-delta.
-            //      With this approach it is no longer possible to pick a point from somewhere near
-            //      the horizon to the center in one move.
-            //      So this logic avoids the problem, that in such cases you easily loose orientation.
-            if (!this._terrainMovement &&
-                (combinedEventsInProgress.drag || combinedEventsInProgress.zoom)) {
-                // When starting to drag or move, flag it and register moveend to clear flagging
-                this._terrainMovement = true;
-                this._map._elevationFreeze = true;
-                this._map.cameraHelper.handleMapControlsPan(deltasForHelper, tr, preZoomAroundLoc);
-            } else if (combinedEventsInProgress.drag && this._terrainMovement) {
-                // drag map
-                tr.setCenter(tr.screenPointToLocation(tr.centerPoint.sub(panDelta)));
-            } else {
-                this._map.cameraHelper.handleMapControlsPan(deltasForHelper, tr, preZoomAroundLoc);
-            }
-        }
+        // Apply zoom, bearing, pitch
+        this._map.cameraHelper.handleMapControlsPitchBearingZoom(deltasForHelper, tr);
+        // Apply panning
+        this._map.cameraHelper.handleMapControlsPan(deltasForHelper, tr, preZoomAroundLoc);
 
         map._applyUpdatedTransform(tr);
 
@@ -606,13 +578,6 @@ export class HandlerManager {
 
         const stillMoving = isMoving(this._eventsInProgress);
         const finishedMoving = (wasMoving || nowMoving) && !stillMoving;
-        if (finishedMoving && this._terrainMovement) {
-            this._map._elevationFreeze = false;
-            this._terrainMovement = false;
-            const tr = this._map._getTransformForUpdate();
-            tr.recalculateZoom(this._map.terrain);
-            this._map._applyUpdatedTransform(tr);
-        }
         if (allowEndAnimation && finishedMoving) {
             this._updatingCamera = true;
             const inertialEase = this._inertia._onMoveEnd(this._map.dragPan._inertiaOptions);

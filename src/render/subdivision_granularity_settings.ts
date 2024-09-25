@@ -44,16 +44,6 @@ export class SubdivisionGranularityExpression {
  */
 export class SubdivisionGranularitySetting {
     /**
-     * Granularity settings used for fill and fill-extrusion layers (for fill, both polygons and their anti-aliasing outlines).
-     */
-    public readonly fill: SubdivisionGranularityExpression;
-
-    /**
-     * Granularity used for the line layer.
-     */
-    public readonly line: SubdivisionGranularityExpression;
-
-    /**
      * Granularity used for geometry covering the entire tile: raster tiles, etc.
      */
     public readonly tile: SubdivisionGranularityExpression;
@@ -63,21 +53,7 @@ export class SubdivisionGranularitySetting {
      */
     public readonly stencil: SubdivisionGranularityExpression;
 
-    /**
-     * Controls the granularity of `pitch-alignment: map` circles and heatmap kernels.
-     * More granular circles will more closely follow the map's surface.
-     */
-    public readonly circle: CircleGranularity;
-
     constructor(options: {
-        /**
-         * Granularity settings used for fill and fill-extrusion layers (for fill, both polygons and their anti-aliasing outlines).
-         */
-        fill: SubdivisionGranularityExpression;
-        /**
-         * Granularity used for the line layer.
-         */
-        line: SubdivisionGranularityExpression;
         /**
          * Granularity used for geometry covering the entire tile: stencil masks, raster tiles, etc.
          */
@@ -86,27 +62,16 @@ export class SubdivisionGranularitySetting {
          * Granularity used for stencil masks for tiles.
          */
         stencil: SubdivisionGranularityExpression;
-        /**
-         * Controls the granularity of `pitch-alignment: map` circles and heatmap kernels.
-         * More granular circles will more closely follow the map's surface.
-         */
-        circle: CircleGranularity;
     }) {
-        this.fill = options.fill;
-        this.line = options.line;
         this.tile = options.tile;
         this.stencil = options.stencil;
-        this.circle = options.circle;
     }
 
     /**
      * Granularity settings that disable subdivision altogether.
      */
     public static readonly noSubdivision = new SubdivisionGranularitySetting({
-        fill: new SubdivisionGranularityExpression(0, 0),
-        line: new SubdivisionGranularityExpression(0, 0),
         tile: new SubdivisionGranularityExpression(0, 0),
         stencil: new SubdivisionGranularityExpression(0, 0),
-        circle: 1
     });
 }

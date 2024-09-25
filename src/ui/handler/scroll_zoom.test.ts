@@ -305,9 +305,6 @@ describe('ScrollZoomHandler', () => {
         const map = createMap();
         map._elevateCameraIfInsideTerrain = (_tr : any) => ({});
         map._renderTaskQueue.run();
-        map.terrain = {
-            pointCoordinate: () => null
-        } as any;
 
         // simulate a single 'wheel' event
         simulate.wheel(map.getCanvas(), {type: 'wheel', deltaY: -simulate.magicWheelZoomDelta, clientX: 1000, clientY: 1000});
@@ -332,9 +329,6 @@ describe('ScrollZoomHandler', () => {
         let map = createMap();
         map._elevateCameraIfInsideTerrain = (_tr : any) => ({});
         map._renderTaskQueue.run();
-        map.terrain = {
-            pointCoordinate: () => null
-        } as any;
         map.setZoom(5);
         map.setMaxPitch(85);
         map.setPitch(80);
@@ -357,9 +351,6 @@ describe('ScrollZoomHandler', () => {
         map = createMap();
         map._elevateCameraIfInsideTerrain = (_tr : any) => ({});
         map._renderTaskQueue.run();
-        map.terrain = {
-            pointCoordinate: () => null
-        } as any;
         map.setZoom(5);
         map.setMaxPitch(85);
         map.setPitch(80);

@@ -4,9 +4,7 @@ import Point from '@mapbox/point-geometry';
 import {wrap, clamp, createIdentityMat4f64, createMat4f64} from '../../util/util';
 import {mat2, mat4, vec3, vec4} from 'gl-matrix';
 import {UnwrappedTileID, OverscaledTileID, CanonicalTileID, calculateTileKey} from '../../source/tile_id';
-import {Terrain} from '../../render/terrain';
 import {interpolates} from '@maplibre/maplibre-gl-style-spec';
-import {PointProjection, xyTransformMat4} from '../../symbol/projection';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {CoveringTilesOptions, CoveringZoomOptions, IReadonlyTransform, ITransform, TransformUpdateResult} from '../transform_interface';
 import {PaddingOptions} from '../edge_insets';
@@ -258,13 +256,13 @@ export class MercatorTransform implements ITransform {
         return mercatorCoveringTiles(this, options, this._invViewProjMatrix);
     }
 
-    recalculateZoom(terrain: Terrain): void {
+    recalculateZoom(): void {
         const origElevation = this.elevation;
         const origAltitude = Math.cos(this._helper._pitch) * this._cameraToCenterDistance / this._helper._pixelPerMeter;
 
         // find position the camera is looking on
-        const center = this.screenPointToLocation(this.centerPoint, terrain);
-        const elevation = terrain.getElevationForLngLatZoom(center, this._helper._tileZoom);
+        const center = this.screenPointToLocation(this.centerPoint);
+        const elevation = 0; // LEAN: TODO: remove elevation altogether
         const deltaElevation = this.elevation - elevation;
         if (!deltaElevation) return;
 
@@ -298,25 +296,15 @@ export class MercatorTransform implements ITransform {
         }
     }
 
-    locationToScreenPoint(lnglat: LngLat, terrain?: Terrain): Point {
-        return terrain ?
-            this.coordinatePoint(locationToMercatorCoordinate(lnglat), terrain.getElevationForLngLatZoom(lnglat, this._helper._tileZoom), this._pixelMatrix3D) :
-            this.coordinatePoint(locationToMercatorCoordinate(lnglat));
+    locationToScreenPoint(lnglat: LngLat): Point {
+        return this.coordinatePoint(locationToMercatorCoordinate(lnglat));
     }
 
-    screenPointToLocation(p: Point, terrain?: Terrain): LngLat {
-        return mercatorCoordinateToLocation(this.screenPointToMercatorCoordinate(p, terrain));
+    screenPointToLocation(p: Point): LngLat {
+        return mercatorCoordinateToLocation(this.screenPointToMercatorCoordinate(p));
     }
 
-    screenPointToMercatorCoordinate(p: Point, terrain?: Terrain): MercatorCoordinate {
-        // get point-coordinate from terrain coordinates framebuffer
-        if (terrain) {
-            const coordinate = terrain.pointCoordinate(p);
-            if (coordinate != null) {
-                return coordinate;
-            }
-        }
-
+    screenPointToMercatorCoordinate(p: Point): MercatorCoordinate {
         // calculate point-coordinate on flat earth
         const targetZ = 0;
         // since we don't know the correct projected z value for the point,
@@ -367,11 +355,7 @@ export class MercatorTransform implements ITransform {
             .extend(this.screenPointToLocation(new Point(0, this._helper._height)));
     }
 
-    isPointOnMapSurface(p: Point, terrain?: Terrain): boolean {
-        if (terrain) {
-            const coordinate = terrain.pointCoordinate(p);
-            return coordinate != null;
-        }
+    isPointOnMapSurface(p: Point): boolean {
         return (p.y > this.height / 2 - getMercatorHorizon(this));
     }
 
@@ -706,24 +690,6 @@ export class MercatorTransform implements ITransform {
 
     getRayDirectionFromPixel(_p: Point): vec3 {
         throw new Error('Not implemented.'); // No need for this in mercator transform
-    }
-
-    projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection {
-        const matrix = this.calculatePosMatrix(unwrappedTileID);
-        let pos;
-        if (getElevation) { // slow because of handle z-index
-            pos = [x, y, getElevation(x, y), 1] as vec4;
-            vec4.transformMat4(pos, pos, matrix);
-        } else { // fast because of ignore z-index
-            pos = [x, y, 0, 1] as vec4;
-            xyTransformMat4(pos, pos, matrix);
-        }
-        const w = pos[3];
-        return {
-            point: new Point(pos[0] / w, pos[1] / w),
-            signedDistanceFromCamera: w,
-            isOccluded: false
-        };
     }
 
     precacheTiles(coords: Array<OverscaledTileID>): void {

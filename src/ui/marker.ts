@@ -549,46 +549,10 @@ export class Marker extends Evented {
         return this;
     }
 
-    _updateOpacity(force: boolean = false) {
-        const terrain = this._map?.terrain;
-        if (!terrain) {
-            const occluded = this._map.transform.isLocationOccluded(this._lngLat);
-            const targetOpacity = occluded ? this._opacityWhenCovered : this._opacity;
-            if (this._element.style.opacity !== targetOpacity) { this._element.style.opacity = targetOpacity; }
-            return;
-        }
-        if (force) {
-            this._opacityTimeout = null;
-        } else {
-            if (this._opacityTimeout) { return; }
-            this._opacityTimeout = setTimeout(() => {
-                this._opacityTimeout = null;
-            }, 100);
-        }
-
-        const map = this._map;
-
-        // Read depth framebuffer, getting position of terrain in line of sight to marker
-        const terrainDistance = map.terrain.depthAtPoint(this._pos);
-        // Transform marker position to clip space
-        const elevation = map.terrain.getElevationForLngLatZoom(this._lngLat, map.transform.tileZoom);
-        const markerDistance = map.transform.lngLatToCameraDepth(this._lngLat, elevation);
-
-        const forgiveness = .006;
-        if (markerDistance - terrainDistance < forgiveness) {
-            this._element.style.opacity = this._opacity;
-            return;
-        }
-        // If the base is obscured, use the offset to check if the marker's center is obscured.
-        const metersToCenter = -this._offset.y / map.transform.pixelsPerMeter;
-        const elevationToCenter = Math.sin(map.getPitch() * Math.PI / 180) * metersToCenter;
-        const terrainDistanceCenter = map.terrain.depthAtPoint(new Point(this._pos.x, this._pos.y - this._offset.y));
-        const markerDistanceCenter = map.transform.lngLatToCameraDepth(this._lngLat, elevation + elevationToCenter);
-        // Display at full opacity if center is visible.
-        const centerIsInvisible = markerDistanceCenter - terrainDistanceCenter > forgiveness;
-
-        if (this._popup?.isOpen() && centerIsInvisible) this._popup.remove();
-        this._element.style.opacity = centerIsInvisible ? this._opacityWhenCovered : this._opacity;
+    _updateOpacity() {
+        const occluded = this._map.transform.isLocationOccluded(this._lngLat);
+        const targetOpacity = occluded ? this._opacityWhenCovered : this._opacity;
+        if (this._element.style.opacity !== targetOpacity) { this._element.style.opacity = targetOpacity; }
     }
 
     _update = (e?: { type: 'move' | 'moveend' | 'terrain' | 'render' }) => {
@@ -606,10 +570,6 @@ export class Marker extends Evented {
         }
 
         this._flatPos = this._pos = this._map.project(this._lngLat)._add(this._offset);
-        if (this._map.terrain) {
-            // flat position is saved because smartWrap needs non-elevated points
-            this._flatPos = this._map.transform.locationToScreenPoint(this._lngLat)._add(this._offset);
-        }
 
         let rotation = '';
         if (this._rotationAlignment === 'viewport' || this._rotationAlignment === 'auto') {
@@ -635,7 +595,7 @@ export class Marker extends Evented {
         DOM.setTransform(this._element, `${anchorTranslate[this._anchor]} translate(${this._pos.x}px, ${this._pos.y}px) ${pitch} ${rotation}`);
 
         browser.frameAsync(new AbortController()).then(() => { // Run _updateOpacity only after painter.render and drawDepth
-            this._updateOpacity(e && e.type === 'moveend');
+            this._updateOpacity();
         }).catch(() => {});
     };
 
@@ -868,7 +828,7 @@ export class Marker extends Evented {
             this._opacityWhenCovered = opacityWhenCovered;
         }
         if (this._map) {
-            this._updateOpacity(true);
+            this._updateOpacity();
         }
         return this;
     }

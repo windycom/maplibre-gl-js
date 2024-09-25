@@ -1,8 +1,7 @@
 import Point from '@mapbox/point-geometry';
 import {LngLat} from '../lng_lat';
-import {OverscaledTileID, CanonicalTileID, UnwrappedTileID} from '../../source/tile_id';
+import {OverscaledTileID, CanonicalTileID} from '../../source/tile_id';
 import {fixedLngLat, fixedCoord} from '../../../test/unit/lib/fixed';
-import type {Terrain} from '../../render/terrain';
 import {MercatorTransform} from './mercator_transform';
 import {LngLatBounds} from '../lng_lat_bounds';
 import {getMercatorHorizon} from './mercator_utils';
@@ -438,42 +437,6 @@ describe('transform', () => {
         // but that shouldn't change the camera's position in world space if that wasn't requested.
         const expectedAltitude = 1865.7579397718;
         expect(transform.getCameraAltitude()).toBeCloseTo(expectedAltitude, 10);
-
-        // expect same values because of no elevation change
-        const terrain = {
-            getElevationForLngLatZoom: () => 200,
-            pointCoordinate: () => null
-        };
-        transform.recalculateZoom(terrain as any);
-        expect(transform.getCameraAltitude()).toBeCloseTo(expectedAltitude, 10);
-        expect(transform.zoom).toBe(14);
-
-        // expect new zoom because of elevation change
-        terrain.getElevationForLngLatZoom = () => 400;
-        transform.recalculateZoom(terrain as any);
-        expect(transform.elevation).toBe(400);
-        expect(transform.center.lng).toBeCloseTo(10, 10);
-        expect(transform.center.lat).toBeCloseTo(50, 10);
-        expect(transform.getCameraAltitude()).toBeCloseTo(expectedAltitude, 10);
-        expect(transform.zoom).toBeCloseTo(14.1845318986, 10);
-
-        // expect new zoom because of elevation change to point below sea level
-        terrain.getElevationForLngLatZoom = () => -200;
-        transform.recalculateZoom(terrain as any);
-        expect(transform.elevation).toBe(-200);
-        expect(transform.getCameraAltitude()).toBeCloseTo(expectedAltitude, 10);
-        expect(transform.zoom).toBeCloseTo(13.6895075574, 10);
-    });
-
-    test('pointCoordinate with terrain when returning null should fall back to 2D', () => {
-        const transform = new MercatorTransform(0, 22, 0, 60, true);
-        transform.resize(500, 500);
-        const terrain = {
-            pointCoordinate: () => null
-        } as any as Terrain;
-        const coordinate = transform.screenPointToMercatorCoordinate(new Point(0, 0), terrain);
-
-        expect(coordinate).toBeDefined();
     });
 
     test('getBounds with horizon', () => {
@@ -497,24 +460,5 @@ describe('transform', () => {
         expect(transform.lngLatToCameraDepth(new LngLat(10, 50), 4)).toBeCloseTo(0.9997324396231673);
         transform.setPitch(60);
         expect(transform.lngLatToCameraDepth(new LngLat(10, 50), 4)).toBeCloseTo(0.9865782165762236);
-    });
-
-    test('projectTileCoordinates', () => {
-        const precisionDigits = 10;
-        const transform = new MercatorTransform(0, 22, 0, 85, true);
-        transform.resize(500, 500);
-        transform.setCenter(new LngLat(10.0, 50.0));
-        let projection = transform.projectTileCoordinates(1024, 1024, new UnwrappedTileID(0, new CanonicalTileID(1, 1, 0)), (_x, _y) => 0);
-        expect(projection.point.x).toBeCloseTo(0.0711111094156901, precisionDigits);
-        expect(projection.point.y).toBeCloseTo(0.872, precisionDigits);
-        expect(projection.signedDistanceFromCamera).toBeCloseTo(750, precisionDigits);
-        expect(projection.isOccluded).toBe(false);
-        transform.setBearing(12);
-        transform.setPitch(10);
-        projection = transform.projectTileCoordinates(1024, 1024, new UnwrappedTileID(0, new CanonicalTileID(1, 1, 0)), (_x, _y) => 0);
-        expect(projection.point.x).toBeCloseTo(-0.10639783373236278, precisionDigits);
-        expect(projection.point.y).toBeCloseTo(0.8136785294062687, precisionDigits);
-        expect(projection.signedDistanceFromCamera).toBeCloseTo(787.6698880195618, precisionDigits);
-        expect(projection.isOccluded).toBe(false);
     });
 });

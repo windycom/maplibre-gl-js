@@ -93,7 +93,7 @@ function drawTiles(
         const siblingTile = sourceCache.findLoadedSibling(coord);
         // Prefer parent tile if present
         const fadeTileReference = parentTile || siblingTile || null;
-        const fade = getFadeValues(tile, fadeTileReference, sourceCache, layer, painter.transform, painter.style.map.terrain);
+        const fade = getFadeValues(tile, fadeTileReference, sourceCache, layer, painter.transform);
 
         let parentScaleBy, parentTL;
 
@@ -119,7 +119,6 @@ function drawTiles(
                 context.extTextureFilterAnisotropicMax);
         }
 
-        const terrainData = painter.style.map.terrain && painter.style.map.terrain.getTerrainData(coord);
         const projectionData = transform.getProjectionData(coord, align);
         const uniformValues = rasterUniformValues(parentTL || [0, 0], parentScaleBy || 1, fade, layer, corners);
 
@@ -128,15 +127,15 @@ function drawTiles(
         const stencilMode = stencilModes ? stencilModes[coord.overscaledZ] : StencilMode.disabled;
 
         program.draw(context, gl.TRIANGLES, depthMode, stencilMode, colorMode, flipCullfaceMode ? CullFaceMode.frontCCW : CullFaceMode.backCCW,
-            uniformValues, terrainData, projectionData, layer.id, mesh.vertexBuffer,
+            uniformValues, projectionData, layer.id, mesh.vertexBuffer,
             mesh.indexBuffer, mesh.segments);
     }
 }
 
-function getFadeValues(tile, parentTile, sourceCache, layer, transform, terrain) {
+function getFadeValues(tile, parentTile, sourceCache, layer, transform) {
     const fadeDuration = layer.paint.get('raster-fade-duration');
 
-    if (!terrain && fadeDuration > 0) {
+    if (fadeDuration > 0) {
         const now = browser.now();
         const sinceTile = (now - tile.timeAdded) / fadeDuration;
         const sinceParent = parentTile ? (now - parentTile.timeAdded) / fadeDuration : -1;

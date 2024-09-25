@@ -1,4 +1,4 @@
-import {mat4, vec2, vec3} from 'gl-matrix';
+import {mat4, vec2} from 'gl-matrix';
 import {OverscaledTileID} from '../../source/tile_id';
 import {Aabb, Frustum, IntersectionResult} from '../../util/primitives';
 import {MercatorCoordinate} from '../mercator_coordinate';
@@ -44,11 +44,11 @@ export function mercatorCoveringTiles(transform: IReadonlyTransform, options: Co
     // No change of LOD behavior for pitch lower than 60 and when there is no top padding: return only tile ids from the requested zoom level
     let minZoom = options.minzoom || 0;
     // Use 0.1 as an epsilon to avoid for explicit == 0.0 floating point checks
-    if (!options.terrain && transform.pitch <= 60.0 && transform.padding.top < 0.1)
+    if (transform.pitch <= 60.0 && transform.padding.top < 0.1)
         minZoom = z;
 
     // There should always be a certain number of maximum zoom level tiles surrounding the center location in 2D or in front of the camera in 3D
-    const radiusOfMaxLvlLodInTiles = options.terrain ? 2 / Math.min(transform.tileSize, options.tileSize) * transform.tileSize : 3;
+    const radiusOfMaxLvlLodInTiles = 3;
 
     const newRootTile = (wrap: number): any => {
         return {
@@ -93,7 +93,7 @@ export function mercatorCoveringTiles(transform: IReadonlyTransform, options: Co
             fullyVisible = intersectResult === IntersectionResult.Full;
         }
 
-        const refPoint = options.terrain ? cameraPoint : centerPoint;
+        const refPoint = centerPoint;
         const distanceX = it.aabb.distanceX(refPoint);
         const distanceY = it.aabb.distanceY(refPoint);
         const longestDim = Math.max(Math.abs(distanceX), Math.abs(distanceY));
@@ -121,17 +121,7 @@ export function mercatorCoveringTiles(transform: IReadonlyTransform, options: Co
             const childX = (x << 1) + (i % 2);
             const childY = (y << 1) + (i >> 1);
             const childZ = it.zoom + 1;
-            let quadrant = it.aabb.quadrant(i);
-            if (options.terrain) {
-                const tileID = new OverscaledTileID(childZ, it.wrap, childZ, childX, childY);
-                const minMax = options.terrain.getMinMaxElevation(tileID);
-                const minElevation = minMax.minElevation ?? transform.elevation;
-                const maxElevation = minMax.maxElevation ?? transform.elevation;
-                quadrant = new Aabb(
-                    [quadrant.min[0], quadrant.min[1], minElevation] as vec3,
-                    [quadrant.max[0], quadrant.max[1], maxElevation] as vec3
-                );
-            }
+            const quadrant = it.aabb.quadrant(i);
             stack.push({aabb: quadrant, zoom: childZ, x: childX, y: childY, wrap: it.wrap, fullyVisible});
         }
     }

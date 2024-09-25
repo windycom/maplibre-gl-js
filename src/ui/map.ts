@@ -25,8 +25,6 @@ import {webpSupported} from '../util/webp_supported';
 import {PerformanceMarkers, PerformanceUtils} from '../util/performance';
 import {Source} from '../source/source';
 import {StyleLayer} from '../style/style_layer';
-import {Terrain} from '../render/terrain';
-import {RenderToTexture} from '../render/render_to_texture';
 import {config} from '../util/config';
 import {defaultLocale} from './default_locale';
 
@@ -52,7 +50,6 @@ import type {
     StyleSpecification,
     LightSpecification,
     SourceSpecification,
-    TerrainSpecification,
     ProjectionSpecification,
     SkySpecification
 } from '@maplibre/maplibre-gl-style-spec';
@@ -652,10 +649,6 @@ export class Map extends Camera {
         this.on('move', () => this._update(false))
             .on('moveend', () => this._update(false))
             .on('zoom', () => this._update(true))
-            .on('terrain', () => {
-                this.painter.terrainFacilitator.dirty = true;
-                this._update(true);
-            })
             .once('idle', () => { this._idleTriggered = true; });
 
         if (typeof window !== 'undefined') {
@@ -822,9 +815,6 @@ export class Map extends Camera {
     }
 
     calculateCameraOptionsFromTo(from: LngLat, altitudeFrom: number, to: LngLat, altitudeTo?: number): CameraOptions {
-        if (altitudeTo == null && this.terrain) {
-            altitudeTo = this.terrain.getElevationForLngLatZoom(to, this.transform.tileZoom);
-        }
         return super.calculateCameraOptionsFromTo(from, altitudeFrom, to, altitudeTo);
     }
 
@@ -1183,7 +1173,7 @@ export class Map extends Camera {
      * ```
      */
     project(lnglat: LngLatLike): Point {
-        return this.transform.locationToScreenPoint(LngLat.convert(lnglat), this.style && this.terrain);
+        return this.transform.locationToScreenPoint(LngLat.convert(lnglat));
     }
 
     /**
@@ -1201,7 +1191,7 @@ export class Map extends Camera {
      * ```
      */
     unproject(point: PointLike): LngLat {
-        return this.transform.screenPointToLocation(Point.convert(point), this.terrain);
+        return this.transform.screenPointToLocation(Point.convert(point));
     }
 
     /**
@@ -1984,78 +1974,6 @@ export class Map extends Camera {
             return;
         }
         return source.loaded();
-    }
-
-    /**
-     * Loads a 3D terrain mesh, based on a "raster-dem" source.
-     *
-     * Triggers the `terrain` event.
-     *
-     * @param options - Options object.
-     * @example
-     * ```ts
-     * map.setTerrain({ source: 'terrain' });
-     * ```
-     */
-    setTerrain(options: TerrainSpecification | null): this {
-        this.style._checkLoaded();
-
-        // clear event handlers
-        if (this._terrainDataCallback) this.style.off('data', this._terrainDataCallback);
-
-        if (!options) {
-            // remove terrain
-            if (this.terrain) this.terrain.sourceCache.destruct();
-            this.terrain = null;
-            if (this.painter.renderToTexture) this.painter.renderToTexture.destruct();
-            this.painter.renderToTexture = null;
-            this.transform.setMinElevationForCurrentTile(0);
-            this.transform.setElevation(0);
-        } else {
-            // add terrain
-            const sourceCache = this.style.sourceCaches[options.source];
-            if (!sourceCache) throw new Error(`cannot load terrain, because there exists no source with ID: ${options.source}`);
-            // Update terrain tiles when adding new terrain
-            if (this.terrain === null) sourceCache.reload();
-            // Warn once if user is using the same source for hillshade and terrain
-            for (const index in this.style._layers) {
-                const thisLayer = this.style._layers[index];
-                if (thisLayer.type === 'hillshade' && thisLayer.source === options.source) {
-                    warnOnce('You are using the same source for a hillshade layer and for 3D terrain. Please consider using two separate sources to improve rendering quality.');
-                }
-            }
-            this.terrain = new Terrain(this.painter, sourceCache, options);
-            this.painter.renderToTexture = new RenderToTexture(this.painter, this.terrain);
-            this.transform.setMinElevationForCurrentTile(this.terrain.getMinTileElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-            this.transform.setElevation(this.terrain.getElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-            this._terrainDataCallback = e => {
-                if (e.dataType === 'style') {
-                    this.terrain.sourceCache.freeRtt();
-                } else if (e.dataType === 'source' && e.tile) {
-                    if (e.sourceId === options.source && !this._elevationFreeze) {
-                        this.transform.setMinElevationForCurrentTile(this.terrain.getMinTileElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-                        this.transform.setElevation(this.terrain.getElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-                    }
-                    this.terrain.sourceCache.freeRtt(e.tile.tileID);
-                }
-            };
-            this.style.on('data', this._terrainDataCallback);
-        }
-
-        this.fire(new Event('terrain', {terrain: options}));
-        return this;
-    }
-
-    /**
-     * Get the terrain-options if terrain is loaded
-     * @returns the TerrainSpecification passed to setTerrain
-     * @example
-     * ```ts
-     * map.getTerrain(); // { source: 'terrain' };
-     * ```
-     */
-    getTerrain(): TerrainSpecification | null {
-        return this.terrain?.options ?? null;
     }
 
     /**
@@ -3176,17 +3094,8 @@ export class Map extends Camera {
             this.style._updateSources(this.transform);
         }
 
-        // update terrain stuff
-        if (this.terrain) {
-            this.terrain.sourceCache.update(this.transform, this.terrain);
-            this.transform.setMinElevationForCurrentTile(this.terrain.getMinTileElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-            if (!this._elevationFreeze) {
-                this.transform.setElevation(this.terrain.getElevationForLngLatZoom(this.transform.center, this.transform.tileZoom));
-            }
-        } else {
-            this.transform.setMinElevationForCurrentTile(0);
-            this.transform.setElevation(0);
-        }
+        this.transform.setMinElevationForCurrentTile(0);
+        this.transform.setElevation(0);
 
         this._placementDirty = this.style && this.style._updatePlacement(this.transform, this.showCollisionBoxes, fadeDuration, this._crossSourceCollisions, transformUpdateResult.forcePlacementUpdate);
 

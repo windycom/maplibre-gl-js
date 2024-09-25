@@ -4,12 +4,12 @@ import {Mesh} from '../../render/mesh';
 import {browser} from '../../util/browser';
 import {easeCubicInOut, lerp} from '../../util/util';
 import {mercatorYfromLat} from '../mercator_coordinate';
-import {SubdivisionGranularityExpression, SubdivisionGranularitySetting} from '../../render/subdivision_granularity_settings';
 import type {Projection, ProjectionGPUContext, TileMeshUsage} from './projection';
 import {PreparedShader, shaders} from '../../shaders/shaders';
 import {MercatorProjection} from './mercator';
 import {ProjectionErrorMeasurement} from './globe_projection_error_measurement';
 import {createTileMeshWithBuffers, CreateTileMeshOptions} from '../../util/create_tile_mesh';
+import {SubdivisionGranularityExpression, SubdivisionGranularitySetting} from '../../render/subdivision_granularity_settings';
 
 export const globeConstants = {
     /**
@@ -23,8 +23,6 @@ export const globeConstants = {
 };
 
 const granularitySettingsGlobe: SubdivisionGranularitySetting = new SubdivisionGranularitySetting({
-    fill: new SubdivisionGranularityExpression(128, 1),
-    line: new SubdivisionGranularityExpression(512, 1),
     // Always keep at least some subdivision on raster tiles, etc,
     // otherwise they will be visibly warped at high zooms (before mercator transition).
     // This si not needed on fill, because fill geometry tends to already be
@@ -32,7 +30,6 @@ const granularitySettingsGlobe: SubdivisionGranularitySetting = new SubdivisionG
     // Minimal granularity of 8 seems to be enough to avoid warped raster tiles, while also minimizing triangle count.
     tile: new SubdivisionGranularityExpression(128, 32),
     stencil: new SubdivisionGranularityExpression(128, 4),
-    circle: 3
 });
 
 export class GlobeProjection implements Projection {

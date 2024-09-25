@@ -4,8 +4,7 @@ import {browser} from '../util/browser';
 import {fixedLngLat, fixedNum} from '../../test/unit/lib/fixed';
 import {setMatchMedia} from '../util/test/util';
 import {mercatorZfromAltitude} from '../geo/mercator_coordinate';
-import {Terrain} from '../render/terrain';
-import {LngLat, LngLatLike} from '../geo/lng_lat';
+import {LngLat} from '../geo/lng_lat';
 import {Event} from '../util/evented';
 import {LngLatBounds} from '../geo/lng_lat_bounds';
 import {MercatorTransform} from '../geo/projection/mercator_transform';
@@ -1747,7 +1746,6 @@ describe('#flyTo', () => {
         const stub = jest.spyOn(browser, 'now');
 
         const terrainCallbacks = {prepare: 0, update: 0, finalize: 0} as any;
-        camera.terrain = {} as Terrain;
         camera._prepareElevation = () => { terrainCallbacks.prepare++; };
         camera._updateElevation = () => { terrainCallbacks.update++; };
         camera._finalizeElevation = () => { terrainCallbacks.finalize++; };
@@ -1771,7 +1769,6 @@ describe('#flyTo', () => {
         const stub = jest.spyOn(browser, 'now');
 
         const terrainCallbacks = {prepare: 0, update: 0, finalize: 0} as any;
-        camera.terrain = {} as Terrain;
         camera._prepareElevation = () => { terrainCallbacks.prepare++; };
         camera._updateElevation = () => { terrainCallbacks.update++; };
         camera._finalizeElevation = () => { terrainCallbacks.finalize++; };
@@ -2167,50 +2164,6 @@ describe('#fitScreenCoordinates', () => {
         expect(fixedLngLat(camera.getCenter(), 4)).toEqual({lng: -45, lat: 40.9799});
         expect(fixedNum(camera.getZoom(), 3)).toBe(2);
         expect(camera.getBearing()).toBeCloseTo(0);
-    });
-});
-
-describe('queryTerrainElevation', () => {
-    let camera: Camera;
-
-    beforeEach(() => {
-        camera = createCamera();
-    });
-
-    test('should return null if terrain is not set', () => {
-        camera.terrain = null;
-        const result = camera.queryTerrainElevation([0, 0]);
-        expect(result).toBeNull();
-    });
-
-    test('should return the correct elevation', () => {
-        // Set up mock transform and terrain objects
-        const transform = new MercatorTransform(0, 22, 0, 60, true);
-        transform.setElevation(50);
-        const terrain = {
-            getElevationForLngLatZoom: jest.fn().mockReturnValue(200)
-        } as any as Terrain;
-
-        // Set up camera with mock transform and terrain
-        camera.transform = transform;
-        camera.terrain = terrain;
-
-        // Call queryTerrainElevation with mock lngLat
-        const lngLatLike: LngLatLike = [1, 2];
-        const expectedElevation = 150; // 200 - 50 = 150
-        const result = camera.queryTerrainElevation(lngLatLike);
-
-        // Check that transform.getElevation was called with the correct arguments
-        expect(terrain.getElevationForLngLatZoom).toHaveBeenCalledWith(
-            expect.objectContaining({
-                lng: lngLatLike[0],
-                lat: lngLatLike[1],
-            }),
-            transform.tileZoom
-        );
-
-        // Check that the correct elevation value was returned
-        expect(result).toEqual(expectedElevation);
     });
 });
 

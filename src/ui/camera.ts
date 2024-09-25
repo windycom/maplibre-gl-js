@@ -5,7 +5,6 @@ import {LngLat} from '../geo/lng_lat';
 import {LngLatBounds} from '../geo/lng_lat_bounds';
 import Point from '@mapbox/point-geometry';
 import {Event, Evented} from '../util/evented';
-import {Terrain} from '../render/terrain';
 import {MercatorCoordinate} from '../geo/mercator_coordinate';
 
 import type {ITransform} from '../geo/transform_interface';
@@ -246,7 +245,6 @@ export type CameraUpdateTransformFunction =  (next: {
 export abstract class Camera extends Evented {
     transform: ITransform;
     cameraHelper: ICameraHelper;
-    terrain: Terrain;
     handlers: HandlerManager;
 
     _moving: boolean;
@@ -960,19 +958,13 @@ export abstract class Camera extends Evented {
         this._easeId = options.easeId;
         this._prepareEase(eventData, options.noMoveStart, currently);
 
-        if (this.terrain) {
-            this._prepareElevation(easeHandler.elevationCenter);
-        }
-
         this._ease((k) => {
             easeHandler.easeFunc(k);
 
-            if (this.terrain && !options.freezeElevation) this._updateElevation(k);
             this._applyUpdatedTransform(tr);
             this._fireMoveEvents(eventData);
 
         }, (interruptingEaseId?: string) => {
-            if (this.terrain && options.freezeElevation) this._finalizeElevation();
             this._afterEase(eventData, interruptingEaseId);
         }, options as any);
 
@@ -998,13 +990,13 @@ export abstract class Camera extends Evented {
     _prepareElevation(center: LngLat) {
         this._elevationCenter = center;
         this._elevationStart = this.transform.elevation;
-        this._elevationTarget = this.terrain.getElevationForLngLatZoom(center, this.transform.tileZoom);
+        this._elevationTarget = 0; // LEAN: TODO: remove me
         this._elevationFreeze = true;
     }
 
     _updateElevation(k: number) {
-        this.transform.setMinElevationForCurrentTile(this.terrain.getMinTileElevationForLngLatZoom(this._elevationCenter, this.transform.tileZoom));
-        const elevation = this.terrain.getElevationForLngLatZoom(this._elevationCenter, this.transform.tileZoom);
+        this.transform.setMinElevationForCurrentTile(0); // LEAN: TODO: remove me
+        const elevation = 0;
         // target terrain updated during flight, slowly move camera to new height
         if (k < 1 && elevation !== this._elevationTarget) {
             const pitch1 = this._elevationTarget - this._elevationStart;
@@ -1017,7 +1009,6 @@ export abstract class Camera extends Evented {
 
     _finalizeElevation() {
         this._elevationFreeze = false;
-        this.transform.recalculateZoom(this.terrain);
     }
 
     /**
@@ -1030,7 +1021,7 @@ export abstract class Camera extends Evented {
      * @returns Transform to apply changes to
      */
     _getTransformForUpdate(): ITransform {
-        if (!this.transformCameraUpdate && !this.terrain) return this.transform;
+        if (!this.transformCameraUpdate) return this.transform;
 
         if (!this._requestedCameraState) {
             this._requestedCameraState = this.transform.clone();
@@ -1052,7 +1043,7 @@ export abstract class Camera extends Evented {
     _elevateCameraIfInsideTerrain(tr: ITransform) : { pitch?: number; zoom?: number } {
         const cameraLngLat = tr.screenPointToLocation(tr.getCameraPoint());
         const cameraAltitude = tr.getCameraAltitude();
-        const minAltitude = this.terrain.getElevationForLngLatZoom(cameraLngLat, tr.zoom);
+        const minAltitude = 0; // LEAN: TODO: remove me
         if (cameraAltitude < minAltitude) {
             const newCamera = this.calculateCameraOptionsFromTo(
                 cameraLngLat, minAltitude, tr.center, tr.elevation);
@@ -1073,9 +1064,6 @@ export abstract class Camera extends Evented {
      */
     _applyUpdatedTransform(tr: ITransform) {
         const modifiers : ((tr: ITransform) => ReturnType<CameraUpdateTransformFunction>)[] = [];
-        if (this.terrain) {
-            modifiers.push(tr => this._elevateCameraIfInsideTerrain(tr));
-        }
         if (this.transformCameraUpdate) {
             modifiers.push(tr => this.transformCameraUpdate(tr));
         }
@@ -1308,7 +1296,6 @@ export abstract class Camera extends Evented {
         this._padding = !tr.isPaddingEqual(padding as PaddingOptions);
 
         this._prepareEase(eventData, false);
-        if (this.terrain) this._prepareElevation(flyToHandler.targetCenter);
 
         this._ease((k) => {
             // s: The distance traveled along the flight path, measured in ρ-screenfuls.
@@ -1330,11 +1317,9 @@ export abstract class Camera extends Evented {
 
             flyToHandler.easeFunc(k, scale, centerFactor, pointAtOffset);
 
-            if (this.terrain && !options.freezeElevation) this._updateElevation(k);
             this._applyUpdatedTransform(tr);
             this._fireMoveEvents(eventData);
         }, () => {
-            if (this.terrain && options.freezeElevation) this._finalizeElevation();
             this._afterEase(eventData);
         }, options);
 
@@ -1412,22 +1397,5 @@ export abstract class Camera extends Evented {
         if (Math.abs(bearing - 360 - currentBearing) < diff) bearing -= 360;
         if (Math.abs(bearing + 360 - currentBearing) < diff) bearing += 360;
         return bearing;
-    }
-
-    /**
-     * Get the elevation difference between a given point
-     * and a point that is currently in the middle of the screen.
-     * This method should be used for proper positioning of custom 3d objects, as explained [here](https://maplibre.org/maplibre-gl-js/docs/examples/add-3d-model-with-terrain/)
-     * Returns null if terrain is not enabled.
-     * This method is subject to change in Maplibre GL JS v5.
-     * @param lngLatLike - [x,y] or LngLat coordinates of the location
-     * @returns elevation offset in meters
-     */
-    queryTerrainElevation(lngLatLike: LngLatLike): number | null {
-        if (!this.terrain) {
-            return null;
-        }
-        const elevation = this.terrain.getElevationForLngLatZoom(LngLat.convert(lngLatLike), this.transform.tileZoom);
-        return elevation - this.transform.elevation;
     }
 }

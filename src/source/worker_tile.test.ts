@@ -1,10 +1,8 @@
 import {WorkerTile} from '../source/worker_tile';
-import {GeoJSONWrapper, Feature} from '../source/geojson_wrapper';
 import {OverscaledTileID} from '../source/tile_id';
 import {StyleLayerIndex} from '../style/style_layer_index';
 import {WorkerTileParameters} from './worker_source';
 import {VectorTile} from '@mapbox/vector-tile';
-import {SubdivisionGranularitySetting} from '../render/subdivision_granularity_settings';
 
 function createWorkerTile() {
     return new WorkerTile({
@@ -18,53 +16,7 @@ function createWorkerTile() {
     } as any as WorkerTileParameters);
 }
 
-function createWrapper() {
-    return new GeoJSONWrapper([{
-        type: 1,
-        geometry: [0, 0],
-        tags: {}
-    } as any as Feature]);
-}
-
 describe('worker tile', () => {
-    test('WorkerTile#parse', async () => {
-        const layerIndex = new StyleLayerIndex([{
-            id: 'test',
-            source: 'source',
-            type: 'circle'
-        }]);
-
-        const tile = createWorkerTile();
-        const result = await tile.parse(createWrapper(), layerIndex, [], {} as any, SubdivisionGranularitySetting.noSubdivision);
-        expect(result.buckets[0]).toBeTruthy();
-    });
-
-    test('WorkerTile#parse skips hidden layers', async () => {
-        const layerIndex = new StyleLayerIndex([{
-            id: 'test-hidden',
-            source: 'source',
-            type: 'fill',
-            layout: {visibility: 'none'}
-        }]);
-
-        const tile = createWorkerTile();
-        const result = await tile.parse(createWrapper(), layerIndex, [], {} as any, SubdivisionGranularitySetting.noSubdivision);
-        expect(result.buckets).toHaveLength(0);
-    });
-
-    test('WorkerTile#parse skips layers without a corresponding source layer', async () => {
-        const layerIndex = new StyleLayerIndex([{
-            id: 'test',
-            source: 'source',
-            'source-layer': 'nonesuch',
-            type: 'fill'
-        }]);
-
-        const tile = createWorkerTile();
-        const result = await tile.parse({layers: {}}, layerIndex, [], {} as any, SubdivisionGranularitySetting.noSubdivision);
-        expect(result.buckets).toHaveLength(0);
-    });
-
     test('WorkerTile#parse warns once when encountering a v1 vector tile layer', async () => {
         const layerIndex = new StyleLayerIndex([{
             id: 'test',
@@ -84,7 +36,7 @@ describe('worker tile', () => {
         const spy = jest.spyOn(console, 'warn').mockImplementation(() => {});
 
         const tile = createWorkerTile();
-        await tile.parse(data, layerIndex, [], {} as any, SubdivisionGranularitySetting.noSubdivision);
+        await tile.parse(data, layerIndex, [], {} as any);
         expect(spy.mock.calls[0][0]).toMatch(/does not use vector tile spec v2/);
     });
 
@@ -142,7 +94,7 @@ describe('worker tile', () => {
         const actorMock = {
             sendAsync
         };
-        const result = await tile.parse(data, layerIndex, ['hello'], actorMock, SubdivisionGranularitySetting.noSubdivision);
+        const result = await tile.parse(data, layerIndex, ['hello'], actorMock);
         expect(result).toBeDefined();
         expect(sendAsync).toHaveBeenCalledTimes(3);
         expect(sendAsync).toHaveBeenCalledWith(expect.objectContaining({data: expect.objectContaining({'icons': ['hello'], 'type': 'icons'})}), expect.any(Object));
@@ -214,9 +166,9 @@ describe('worker tile', () => {
         const actorMock = {
             sendAsync
         };
-        tile.parse(data, layerIndex, ['hello'], actorMock, SubdivisionGranularitySetting.noSubdivision).then(() => expect(false).toBeTruthy());
-        tile.parse(data, layerIndex, ['hello'], actorMock, SubdivisionGranularitySetting.noSubdivision).then(() => expect(false).toBeTruthy());
-        const result = await tile.parse(data, layerIndex, ['hello'], actorMock, SubdivisionGranularitySetting.noSubdivision);
+        tile.parse(data, layerIndex, ['hello'], actorMock).then(() => expect(false).toBeTruthy());
+        tile.parse(data, layerIndex, ['hello'], actorMock).then(() => expect(false).toBeTruthy());
+        const result = await tile.parse(data, layerIndex, ['hello'], actorMock);
         expect(result).toBeDefined();
         expect(cancelCount).toBe(6);
         expect(sendAsync).toHaveBeenCalledTimes(9);

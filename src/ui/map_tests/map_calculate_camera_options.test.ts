@@ -2,7 +2,6 @@ import {createMap, beforeMapTest} from '../../util/test/util';
 import {LngLat} from '../../geo/lng_lat';
 import {OverscaledTileID} from '../../source/tile_id';
 import {CameraOptions} from '../camera';
-import {Terrain} from '../../render/terrain';
 import {mercatorZfromAltitude} from '../../geo/mercator_coordinate';
 
 beforeEach(() => {
@@ -17,10 +16,6 @@ describe('#calculateCameraOptionsFromTo', () => {
 
         const mockedGetElevation = jest.fn((_lngLat: LngLat, _zoom: number) => 111200);
 
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevationForLngLatZoom = mockedGetElevation;
-        map.terrain = terrainStub;
-
         // distance between lng x and lng x+1 is 111.2km at same lat
         // altitude same as center elevation => 90° pitch
         const cameraOptions: CameraOptions = map.calculateCameraOptionsFromTo(new LngLat(1, 0), 111200, new LngLat(0, 0));
@@ -34,9 +29,6 @@ describe('#calculateCameraOptionsFromTo', () => {
 
         const mockedGetElevation = jest.fn((_lngLat: LngLat, _zoom: number) => 111200 * 3);
 
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevationForLngLatZoom = mockedGetElevation;
-        map.terrain = terrainStub;
         // distance between lng x and lng x+1 is 111.2km at same lat
         // (elevation difference of cam and center) / 2 = grounddistance =>
         // acos(111.2 / sqrt(111.2² + (111.2 * 2)²)) = acos(1/sqrt(5)) => 63.435 + 90 = 153.435
@@ -50,10 +42,6 @@ describe('#calculateCameraOptionsFromTo', () => {
         const map = createMap();
 
         const mockedGetElevation = jest.fn((_lngLat: LngLat, _zoom: number) => 111200 / 2);
-
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevationForLngLatZoom = mockedGetElevation;
-        map.terrain = terrainStub;
 
         // distance between lng x and lng x+1 is 111.2km at same lat
         // (elevation difference of cam and center) * 2 = grounddistance =>
@@ -69,10 +57,6 @@ describe('#calculateCameraOptionsFromTo', () => {
 
         const mockedGetElevation = jest.fn((_lngLat: LngLat, _zoom: number) => 1000);
 
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevationForLngLatZoom = mockedGetElevation;
-        map.terrain = terrainStub;
-
         const expectedZoom = Math.log2(map.transform.cameraToCenterDistance / mercatorZfromAltitude(1000, 0) / map.transform.tileSize);
         const cameraOptions = map.calculateCameraOptionsFromTo(new LngLat(0, 0), 0, new LngLat(0, 0));
 
@@ -86,10 +70,6 @@ describe('#calculateCameraOptionsFromTo', () => {
 
         const mockedGetElevation = jest.fn((_tileID: OverscaledTileID, _x: number, _y: number, _extent?: number) => 0);
 
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevation = mockedGetElevation;
-        map.terrain = terrainStub;
-
         const cameraOptions = map.calculateCameraOptionsFromTo(new LngLat(0, 0), 0, new LngLat(0, 0), 1000);
 
         expect(cameraOptions).toBeDefined();
@@ -100,10 +80,6 @@ describe('#calculateCameraOptionsFromTo', () => {
         const map = createMap();
 
         const mockedGetElevation = jest.fn((_tileID: OverscaledTileID, _x: number, _y: number, _extent?: number) => 0);
-
-        const terrainStub = {} as Terrain;
-        terrainStub.getElevation = mockedGetElevation;
-        map.terrain = terrainStub;
 
         const cameraOptions = map.calculateCameraOptionsFromTo(new LngLat(0, 0), 0, new LngLat(1, 0), 0);
 
