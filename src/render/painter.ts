@@ -22,7 +22,6 @@ import {drawBackground} from './draw_background';
 import {drawDebug, drawDebugPadding, selectDebugSource} from './draw_debug';
 import {drawCustom} from './draw_custom';
 import {OverscaledTileID} from '../source/tile_id';
-import {drawSky, drawAtmosphere} from './draw_sky';
 import {Mesh} from './mesh';
 import {MercatorShaderDefine, MercatorShaderVariantKey} from '../geo/projection/mercator';
 
@@ -463,9 +462,6 @@ export class Painter {
         this.context.clear({color: options.showOverdrawInspector ? Color.black : Color.transparent, depth: 1});
         this.clearStencil();
 
-        // draw sky first to not overwrite symbols
-        if (this.style.sky) drawSky(this, this.style.sky);
-
         this._showOverdrawInspector = options.showOverdrawInspector;
         this.depthRangeFor3D = [0, 1 - ((style._order.length + 2) * this.numSublayers * this.depthEpsilon)];
 
@@ -497,11 +493,6 @@ export class Painter {
 
             this._renderTileClippingMasks(layer, coordsAscending[layer.source], false);
             this.renderLayer(this, sourceCache, layer, coords);
-        }
-
-        // Render atmosphere, only for Globe projection
-        if (this.style.projection.name === 'globe') {
-            drawAtmosphere(this, this.style.sky, this.style.light);
         }
 
         if (this.options.showTileBoundaries) {

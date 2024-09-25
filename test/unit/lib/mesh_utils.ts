@@ -19,9 +19,9 @@ export type SimpleMesh = {
  * Generates a simple grid mesh that has `size` by `size` quads.
  */
 export function getGridMesh(size: number): SimpleMesh {
-    const vertices = [];
-    const indicesTriangles = [];
-    const indicesLines = [];
+    const vertices: Array<number> = [];
+    const indicesTriangles: Array<number> = [];
+    const indicesLines: Array<number> = [];
 
     const verticesPerAxis = size + 1;
 
@@ -110,9 +110,9 @@ function splitmix32(a) {
  * Generates a mesh with the vertices of a grid, but random triangles and lines.
  */
 export function getGridMeshRandom(size: number, triangleCount: number, lineCount: number): SimpleMesh {
-    const vertices = [];
-    const indicesTriangles = [];
-    const indicesLines = [];
+    const vertices: Array<number> = [];
+    const indicesTriangles: Array<number> = [];
+    const indicesLines: Array<number> = [];
 
     const verticesPerAxis = size + 1;
 
@@ -172,8 +172,8 @@ export function getGridMeshRandom(size: number, triangleCount: number, lineCount
  * @param edges - List of arrays of edge indices. Every pair of indices forms a line. A single triangle would look like `[[0 1 1 2 2 0]]`.
  * @returns SVG image as string.
  */
-export function getDebugSvg(flattened: Array<number>, triangles?: Array<number>, edges?: Array<Array<number>>, granularity: number = 1): string {
-    const svg = [];
+export function getDebugSvg(flattened: Array<number>, triangles: Array<number>, edges: Array<Array<number>>, granularity: number = 1): string {
+    const svg: Array<string> = [];
 
     const cellSize = EXTENT / granularity;
 
