@@ -99,11 +99,20 @@ function getWrap(centerCoord: MercatorCoordinate, tileX: number, tileSize: numbe
     return 0;
 }
 
+// Tile AABBs are static, cache them!
+const tileAabbCache: Map<string, Aabb> = new Map();
+
 /**
  * Returns the AABB of the specified tile. The AABB is in the coordinate space where the globe is a unit sphere.
  * @param tileID - Tile x, y and z for zoom.
  */
-export function getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
+export function getTileAABB(tileIdX: number, tileIdY: number, tileIdZ: number): Aabb {
+    const key = `${tileIdX}_${tileIdY}_${tileIdZ}`;
+    if (tileAabbCache.has(key)) {
+        return tileAabbCache.get(key);
+    }
+
+    let aabb: Aabb;
     // We can get away with only checking the 4 tile corners for AABB construction, because for any tile of zoom level 2 or higher
     // it holds that the extremes (minimal or maximal value) of X, Y or Z coordinates must lie in one of the tile corners.
     //
@@ -134,29 +143,29 @@ export function getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
     // - zoom level 0 tile is the entire sphere
     // - zoom level 1 tiles are "quarters of a sphere"
 
-    if (tileID.z <= 0) {
+    if (tileIdZ <= 0) {
         // Tile covers the entire sphere.
-        return new Aabb(
+        aabb = new Aabb(
             [-1, -1, -1],
             [1, 1, 1]
         );
-    } else if (tileID.z === 1) {
+    } else if (tileIdZ === 1) {
         // Tile covers a quarter of the sphere.
         // X is 1 at lng=E90°
         // Y is 1 at **north** pole
         // Z is 1 at null island
-        return new Aabb(
-            [tileID.x === 0 ? -1 : 0, tileID.y === 0 ? 0 : -1, -1],
-            [tileID.x === 0 ? 0 : 1, tileID.y === 0 ? 1 : 0, 1]
+        aabb = new Aabb(
+            [tileIdX === 0 ? -1 : 0, tileIdY === 0 ? 0 : -1, -1],
+            [tileIdX === 0 ? 0 : 1, tileIdY === 0 ? 1 : 0, 1]
         );
     } else {
         // Compute AABB using the 4 corners.
 
         const corners = [
-            projectTileCoordinatesToSphere(0, 0, tileID),
-            projectTileCoordinatesToSphere(EXTENT, 0, tileID),
-            projectTileCoordinatesToSphere(EXTENT, EXTENT, tileID),
-            projectTileCoordinatesToSphere(0, EXTENT, tileID),
+            projectTileCoordinatesToSphere(0, 0, tileIdX, tileIdY, tileIdZ),
+            projectTileCoordinatesToSphere(EXTENT, 0, tileIdX, tileIdY, tileIdZ),
+            projectTileCoordinatesToSphere(EXTENT, EXTENT, tileIdX, tileIdY, tileIdZ),
+            projectTileCoordinatesToSphere(0, EXTENT, tileIdX, tileIdY, tileIdZ),
         ];
 
         const min: vec3 = [1, 1, 1];
@@ -171,19 +180,22 @@ export function getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
 
         // Special handling of poles - we need to extend the tile AABB
         // to include the pole for tiles that border mercator north/south edge.
-        if (tileID.y === 0 || (tileID.y === (1 << tileID.z) - 1)) {
-            const pole = [0, tileID.y === 0 ? 1 : -1, 0];
+        if (tileIdY === 0 || (tileIdY === (1 << tileIdZ) - 1)) {
+            const pole = [0, tileIdY === 0 ? 1 : -1, 0];
             for (let i = 0; i < 3; i++) {
                 min[i] = Math.min(min[i], pole[i]);
                 max[i] = Math.max(max[i], pole[i]);
             }
         }
 
-        return new Aabb(
+        aabb = new Aabb(
             min,
             max
         );
     }
+
+    tileAabbCache.set(key, aabb);
+    return aabb;
 }
 
 /**
@@ -191,8 +203,7 @@ export function getTileAABB(tileID: {x: number; y: number; z: number}): Aabb {
  * @returns 0 is not visible, 1 if partially visible, 2 if fully visible.
  */
 function isTileVisible(frustum: Frustum, plane: vec4, x: number, y: number, z: number): IntersectionResult {
-    const tileID = {x, y, z};
-    const aabb = getTileAABB(tileID);
+    const aabb = getTileAABB(x, y, z);
 
     const frustumTest = aabb.intersectsFrustum(frustum);
     const planeTest = aabb.intersectsPlane(plane);

@@ -7,6 +7,7 @@ import {CanonicalTileID, UnwrappedTileID} from '../../../src/source/tile_id';
 import {SingleCollisionBox} from '../../../src/data/bucket/symbol_bucket';
 import {EXTENT} from '../../../src/data/extent';
 import {MercatorTransform} from '../../../src/geo/projection/mercator_transform';
+import {mat4} from 'gl-matrix';
 
 type TestSymbol = {
     collisionBox: SingleCollisionBox;
@@ -17,6 +18,7 @@ type TestSymbol = {
     rotateWithMap: boolean;
     translation: [number, number];
     shift?: Point;
+    simpleProjectionMatrix?: mat4;
 }
 
 // For this benchmark we need a deterministic random number generator. This function provides one.
@@ -39,8 +41,9 @@ export default class SymbolCollisionBox extends Benchmark {
     private _symbols: Array<TestSymbol>;
 
     async setup(): Promise<void> {
-        this._transform = new MercatorTransform(0, 22, 0, 60, true);
-        this._transform.resize(1024, 1024);
+        const tr = new MercatorTransform(0, 22, 0, 60, true);
+        this._transform = tr;
+        tr.resize(1024, 1024);
         const unwrappedTileID = new UnwrappedTileID(0, new CanonicalTileID(0, 0, 0));
 
         const rng = splitmix32(0xdeadbeef);
@@ -70,7 +73,8 @@ export default class SymbolCollisionBox extends Benchmark {
                     rndRange(-20, 20),
                     rndRange(-20, 20)
                 ],
-                shift: rng() > 0.5 ? new Point(rndRange(-20, 20), rndRange(-20, 20)) : undefined
+                shift: rng() > 0.5 ? new Point(rndRange(-20, 20), rndRange(-20, 20)) : undefined,
+                simpleProjectionMatrix: tr.calculatePosMatrix(unwrappedTileID, false),
             });
         }
     }
@@ -92,7 +96,8 @@ export default class SymbolCollisionBox extends Benchmark {
                 s.translation,
                 null,
                 null,
-                s.shift
+                s.shift,
+                s.simpleProjectionMatrix,
             );
         }
     }
