@@ -420,7 +420,7 @@ export class TransformHelper implements ITransformGetters {
     setMaxBounds(bounds?: LngLatBounds | null): void {
         if (bounds) {
             this._lngRange = [bounds.getWest(), bounds.getEast()];
-            this._latRange = [bounds.getSouth(), bounds.getNorth()];
+            this._latRange = [Math.max(bounds.getSouth(), -MAX_VALID_LATITUDE), Math.min(bounds.getNorth(), MAX_VALID_LATITUDE)];
             this._constrain();
         } else {
             this._lngRange = null;
