@@ -6,7 +6,6 @@ import {AttributionControl} from './ui/control/attribution_control';
 import {LogoControl} from './ui/control/logo_control';
 import {ScaleControl} from './ui/control/scale_control';
 import {FullscreenControl} from './ui/control/fullscreen_control';
-import {TerrainControl} from './ui/control/terrain_control';
 import {Popup} from './ui/popup';
 import {Marker} from './ui/marker';
 import {Style} from './style/style';
@@ -16,16 +15,12 @@ import Point from '@mapbox/point-geometry';
 import {MercatorCoordinate} from './geo/mercator_coordinate';
 import {Evented} from './util/evented';
 import {config} from './util/config';
-import {rtlMainThreadPluginFactory} from './source/rtl_text_plugin_main_thread';
 import {WorkerPool} from './util/worker_pool';
 import {prewarm, clearPrewarmedResources} from './util/global_worker_pool';
 import {AJAXError} from './util/ajax';
-import {GeoJSONSource} from './source/geojson_source';
 import {CanvasSource, CanvasSourceSpecification} from './source/canvas_source';
 import {ImageSource} from './source/image_source';
-import {RasterDEMTileSource} from './source/raster_dem_tile_source';
 import {RasterTileSource} from './source/raster_tile_source';
-import {VectorTileSource} from './source/vector_tile_source';
 import {VideoSource} from './source/video_source';
 import {Source, addSourceType} from './source/source';
 import {addProtocol, removeProtocol} from './source/protocol_crud';
@@ -51,35 +46,6 @@ const version = packageJSON.version;
 
 export type * from '@maplibre/maplibre-gl-style-spec';
 
-/**
- * Sets the map's [RTL text plugin](https://www.mapbox.com/mapbox-gl-js/plugins/#mapbox-gl-rtl-text).
- * Necessary for supporting the Arabic and Hebrew languages, which are written right-to-left.
- *
- * @param pluginURL - URL pointing to the Mapbox RTL text plugin source.
- * @param lazy - If set to `true`, maplibre will defer loading the plugin until rtl text is encountered,
- * rtl text will then be rendered only after the plugin finishes loading.
- * @example
- * ```ts
- * setRTLTextPlugin('https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.js', false);
- * ```
- * @see [Add support for right-to-left scripts](https://maplibre.org/maplibre-gl-js/docs/examples/mapbox-gl-rtl-text/)
- */
-function setRTLTextPlugin(pluginURL: string, lazy: boolean): Promise<void> {
-    return rtlMainThreadPluginFactory().setRTLTextPlugin(pluginURL, lazy);
-}
-/**
- * Gets the map's [RTL text plugin](https://www.mapbox.com/mapbox-gl-js/plugins/#mapbox-gl-rtl-text) status.
- * The status can be `unavailable` (i.e. not requested or removed), `loading`, `loaded` or `error`.
- * If the status is `loaded` and the plugin is requested again, an error will be thrown.
- *
- * @example
- * ```ts
- * const pluginStatus = getRTLTextPluginStatus();
- * ```
- */
-function getRTLTextPluginStatus(): string {
-    return rtlMainThreadPluginFactory().getRTLTextPluginStatus();
-}
 /**
  * Returns the package version of the library
  * @returns Package version of the library
@@ -179,7 +145,6 @@ export {
     LogoControl,
     ScaleControl,
     FullscreenControl,
-    TerrainControl,
     Hash,
     Popup,
     Marker,
@@ -192,11 +157,8 @@ export {
     AJAXError,
     config,
     CanvasSource,
-    GeoJSONSource,
     ImageSource,
-    RasterDEMTileSource,
     RasterTileSource,
-    VectorTileSource,
     VideoSource,
     EdgeInsets,
     BoxZoomHandler,
@@ -233,8 +195,6 @@ export {
     type MapEventType,
     type MapDataEvent,
     type MapContextEvent,
-    setRTLTextPlugin,
-    getRTLTextPluginStatus,
     prewarm,
     clearPrewarmedResources,
     getVersion,

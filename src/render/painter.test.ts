@@ -12,7 +12,6 @@ test('Render must not fail with incompletely loaded style', () => {
     const map = getStubMap();
     const style = new Style(map);
     style._setProjectionInternal('mercator');
-    style._updatePlacement(transform, false, 0, false);
     painter.render(style, {
         fadeDuration: 0,
         moving: false,

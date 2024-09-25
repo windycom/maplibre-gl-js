@@ -7,8 +7,14 @@ import type {StyleImage} from '../style/style_image';
 import {TextFit} from '../style/style_image';
 import type {ImageManager} from './image_manager';
 import type {Texture} from './texture';
-import type {Rect} from './glyph_atlas';
 import type {GetImagesResponse} from '../util/actor_messages';
+
+export type Rect = {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+};
 
 const IMAGE_PADDING: number = 1;
 export {IMAGE_PADDING};
