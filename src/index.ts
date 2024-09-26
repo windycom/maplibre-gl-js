@@ -14,7 +14,7 @@ import {LngLat, LngLatLike} from './geo/lng_lat';
 import {LngLatBounds, LngLatBoundsLike} from './geo/lng_lat_bounds';
 import Point from '@mapbox/point-geometry';
 import {MercatorCoordinate} from './geo/mercator_coordinate';
-import {Evented} from './util/evented';
+import {Evented, Event} from './util/evented';
 import {config} from './util/config';
 import {rtlMainThreadPluginFactory} from './source/rtl_text_plugin_main_thread';
 import {WorkerPool} from './util/worker_pool';
@@ -28,6 +28,7 @@ import {RasterTileSource} from './source/raster_tile_source';
 import {VectorTileSource} from './source/vector_tile_source';
 import {VideoSource} from './source/video_source';
 import {OverscaledTileID} from './source/tile_id';
+import {Tile} from './source/tile';
 import {Source, addSourceType} from './source/source';
 import {addProtocol, removeProtocol} from './source/protocol_crud';
 import {getGlobalDispatcher} from './util/dispatcher';
@@ -48,6 +49,7 @@ import {KeyboardHandler} from './ui/handler/keyboard';
 import {TwoFingersTouchPitchHandler, TwoFingersTouchRotateHandler, TwoFingersTouchZoomHandler} from './ui/handler/two_fingers_touch';
 import {MessageType} from './util/actor_messages';
 import {createTileMesh} from './util/create_tile_mesh';
+import {SourceCache} from './source/source_cache';
 const version = packageJSON.version;
 
 export type * from '@maplibre/maplibre-gl-style-spec';
@@ -189,6 +191,9 @@ export {
     LngLatBounds,
     Point,
     MercatorCoordinate,
+    SourceCache,
+    Event,
+    Tile,
     Evented,
     AJAXError,
     config,
