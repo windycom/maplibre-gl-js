@@ -81,7 +81,7 @@ function shouldSplitTile(centerCoord: MercatorCoordinate, cameraCoord: MercatorC
     // This logic might be slightly different from what mercator_transform.ts does, but should result in very similar (if not the same) set of tiles being loaded.
     const centerDist = distanceToTile(centerCoord.x, centerCoord.y, tileX, tileY, tileSize);
     const cameraDist = distanceToTile(cameraCoord.x, cameraCoord.y, tileX, tileY, tileSize);
-    return Math.min(centerDist, cameraDist) * 2 <= radiusOfMaxLvlLodInTiles; // Multiply distance by 2, because the subdivided tiles would be half the size
+    return Math.min(centerDist, cameraDist) * 2 <= radiusOfMaxLvlLodInTiles * tileSize; // Multiply distance by 2, because the subdivided tiles would be half the size
 }
 
 // Returns the wrap value for a given tile, computed so that tiles will remain loaded when crossing the antimeridian.
