@@ -6,6 +6,14 @@
 ### 🐞 Bug fixes
 - _...Add new stuff here..._
 
+## 5.0.0-pre.1
+
+### ✨ Features and improvements
+
+- Support globe mode ([#3963](https://github.com/maplibre/maplibre-gl-js/issues/3963))
+- Merge atmosphere an sky implementation ([#3888](https://github.com/maplibre/maplibre-gl-js/issues/3888))
+- Add option to display a realistic atmosphere when using a Globe projection ([#3888](https://github.com/maplibre/maplibre-gl-js/issues/3888))
+
 ## 4.7.1
 
 ### 🐞 Bug fixes
