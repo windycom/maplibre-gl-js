@@ -570,20 +570,21 @@ export class GlobeTransform implements ITransform {
     }
 
     public getPixelScale(): number {
-        return 1.0 / Math.cos(this.getAnimatedLatitude() * Math.PI / 180);
+        return lerp(this._mercatorTransform.getPixelScale(), 1.0 / Math.cos(this.getAnimatedLatitude() * Math.PI / 180), this._globeness);
     }
 
     public getCircleRadiusCorrection(): number {
-        return Math.cos(this.getAnimatedLatitude() * Math.PI / 180);
+        return lerp(this._mercatorTransform.getCircleRadiusCorrection(), Math.cos(this.getAnimatedLatitude() * Math.PI / 180), this._globeness);
     }
 
     public getPitchedTextCorrection(textAnchorX: number, textAnchorY: number, tileID: UnwrappedTileID): number {
+        const mercatorCorrection = this._mercatorTransform.getPitchedTextCorrection(textAnchorX, textAnchorY, tileID);
         if (!this._globeRendering) {
-            return 1.0;
+            return mercatorCorrection;
         }
         const mercator = tileCoordinatesToMercatorCoordinates(textAnchorX, textAnchorY, tileID.canonical);
         const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercator.x, mercator.y);
-        return this.getCircleRadiusCorrection() / Math.cos(angular[1]);
+        return lerp(mercatorCorrection, this.getCircleRadiusCorrection() / Math.cos(angular[1]), this._globeness);
     }
 
     public projectTileCoordinates(x: number, y: number, unwrappedTileID: UnwrappedTileID, getElevation: (x: number, y: number) => number): PointProjection {
