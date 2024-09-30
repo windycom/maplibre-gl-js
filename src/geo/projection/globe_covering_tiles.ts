@@ -4,7 +4,8 @@ import {CoveringTilesOptions} from '../transform_interface';
 import {OverscaledTileID} from '../../source/tile_id';
 import {MercatorCoordinate} from '../mercator_coordinate';
 import {EXTENT} from '../../data/extent';
-import {projectTileCoordinatesToSphere} from './globe_utils';
+import {angularCoordinatesRadiansToVector, mercatorCoordinatesToAngularCoordinatesRadians, projectTileCoordinatesToSphere, sphereSurfacePointToCoordinates} from './globe_utils';
+import {createVec3f64, pointPlaneSignedDistance} from '../../util/util';
 
 type CoveringTilesResult = {
     tileID: OverscaledTileID;
@@ -18,6 +19,78 @@ type CoveringTilesStackEntry = {
     zoom: number;
     fullyVisible: boolean;
 };
+
+function mercatorToVector(mercatorX: number, mercatorY: number): vec3 {
+    const angular = mercatorCoordinatesToAngularCoordinatesRadians(mercatorX, mercatorY);
+    return angularCoordinatesRadiansToVector(angular[0], angular[1]);
+}
+
+/**
+ * A more accurate function for determining whether a tile is hidden below horizon.
+ * @param cameraX - Camera mercator X (0..1)
+ * @param cameraY - Camera mercator Y (0..1)
+ * @param tileX - Tile X (0..2^z)
+ * @param tileY - Tile Y (0..2^z)
+ * @param tileZ - Tile Z (zoom)
+ * @param plane - Horizon plane.
+ * @returns True if the tile is entirely below horizon.
+ */
+function tileBelowHorizon(cameraX: number, cameraY: number, tileX: number, tileY: number, tileZ: number, plane: vec4): boolean {
+    const scale = 1.0 / (1 << tileZ);
+    const tileStartX = tileX * scale;
+    const tileStartY = tileY * scale;
+    const tileEndX = tileStartX + scale;
+    const tileEndY = tileStartY + scale;
+    if (cameraX >= tileStartX && cameraY >= tileStartY && cameraX <= tileEndX && cameraY <= tileEndY) {
+        // Camera is above the tile
+        return false;
+    }
+
+    // Naive
+    const naiveClosestX = Math.min(Math.max(cameraX, tileStartX), tileEndX);
+    const naiveClosestY = Math.min(Math.max(cameraY, tileStartY), tileEndY);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(naiveClosestX, naiveClosestY)) >= 0) {
+        return false;
+    }
+
+    // Wrapped left
+    const wrappedLeftClosestX = Math.min(Math.max(cameraX - 1, tileStartX), tileEndX);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(wrappedLeftClosestX, naiveClosestY)) >= 0) {
+        return false;
+    }
+
+    // Wrapped right
+    const wrappedRightClosestX = Math.min(Math.max(cameraX + 1, tileStartX), tileEndX);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(wrappedRightClosestX, naiveClosestY)) >= 0) {
+        return false;
+    }
+
+    // Over north pole, shift left
+    const shiftLeftClosestX = Math.min(Math.max(cameraX - 0.5, tileStartX), tileEndX);
+    const overNorthClosestY = Math.min(Math.max(-cameraY, tileStartY), tileEndY);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(shiftLeftClosestX, overNorthClosestY)) >= 0) {
+        return false;
+    }
+
+    // Over north pole, shift right
+    const shiftRightClosestX = Math.min(Math.max(cameraX + 0.5, tileStartX), tileEndX);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(shiftRightClosestX, overNorthClosestY)) >= 0) {
+        return false;
+    }
+
+    // Over south pole, shift left
+    const overSouthClosestY = Math.min(Math.max(-cameraY, tileStartY), tileEndY);
+    if (pointPlaneSignedDistance(plane, mercatorToVector(shiftLeftClosestX, overSouthClosestY)) >= 0) {
+        return false;
+    }
+
+    // Over south pole, shift right
+    if (pointPlaneSignedDistance(plane, mercatorToVector(shiftRightClosestX, overSouthClosestY)) >= 0) {
+        return false;
+    }
+
+    return true;
+}
 
 /**
  * Computes distance of a point to a tile in an arbitrary axis.
@@ -202,7 +275,14 @@ export function getTileAABB(tileIdX: number, tileIdY: number, tileIdZ: number): 
  * A simple/heuristic function that returns whether the tile is visible under the current transform.
  * @returns 0 is not visible, 1 if partially visible, 2 if fully visible.
  */
-function isTileVisible(frustum: Frustum, plane: vec4, x: number, y: number, z: number): IntersectionResult {
+function isTileVisible(frustum: Frustum, plane: vec4, x: number, y: number, z: number, cameraX: number, cameraY: number): IntersectionResult {
+    // First test if the tile is below horzion.
+    // This alone cannot determine whether the tile is only partially hidden,
+    // so the AABB-plane test below is still needed.
+    if (tileBelowHorizon(cameraX, cameraY, x, y, z, plane)) {
+        return IntersectionResult.None;
+    }
+
     const aabb = getTileAABB(x, y, z);
 
     const frustumTest = aabb.intersectsFrustum(frustum);
@@ -226,7 +306,7 @@ function isTileVisible(frustum: Frustum, plane: vec4, x: number, y: number, z: n
  * @param options - Additional coveringTiles options.
  * @returns A list of tile coordinates, ordered by ascending distance from camera.
  */
-export function globeCoveringTiles(frustum: Frustum, plane: vec4, cameraCoord: MercatorCoordinate, centerCoord: MercatorCoordinate, coveringZoom: number, options: CoveringTilesOptions): OverscaledTileID[] {
+export function globeCoveringTiles(frustum: Frustum, plane: vec4, centerCoord: MercatorCoordinate, cameraPosition: vec3, coveringZoom: number, options: CoveringTilesOptions): OverscaledTileID[] {
     let z = coveringZoom;
     const actualZ = z;
 
@@ -236,6 +316,11 @@ export function globeCoveringTiles(frustum: Frustum, plane: vec4, cameraCoord: M
     if (options.maxzoom !== undefined && z > options.maxzoom) {
         z = options.maxzoom;
     }
+
+    const normalizedCamera = createVec3f64();
+    vec3.normalize(normalizedCamera, cameraPosition);
+    const cameraLocation = sphereSurfacePointToCoordinates(normalizedCamera);
+    const cameraCoord = MercatorCoordinate.fromLngLat(cameraLocation);
 
     const numTiles = Math.pow(2, z);
     const cameraPoint = [numTiles * cameraCoord.x, numTiles * cameraCoord.y, 0];
@@ -263,7 +348,7 @@ export function globeCoveringTiles(frustum: Frustum, plane: vec4, cameraCoord: M
 
         // Visibility of a tile is not required if any of its ancestor if fully visible
         if (!fullyVisible) {
-            const intersectResult = isTileVisible(frustum, plane, it.x, it.y, it.zoom);
+            const intersectResult = isTileVisible(frustum, plane, it.x, it.y, it.zoom, cameraCoord.x, cameraCoord.y);
 
             if (intersectResult === IntersectionResult.None)
                 continue;
