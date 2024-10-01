@@ -3,7 +3,6 @@ import {clamp, differenceOfAnglesDegrees, lerp, mod, remapSaturate, wrap} from '
 import {LngLat} from '../lng_lat';
 import {MAX_VALID_LATITUDE, scaleZoom} from '../transform_helper';
 import Point from '@mapbox/point-geometry';
-import {tileCoordinatesToMercatorCoordinates} from './mercator_utils';
 import {EXTENT} from '../../data/extent';
 
 export function getGlobeCircumferencePixels(transform: {worldSize: number; center: {lat: number}}): number {
