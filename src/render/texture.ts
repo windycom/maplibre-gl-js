@@ -42,7 +42,7 @@ export class Texture {
     }
 
     /**
-     * @summary Updates texture content, can also change texture format if necessary
+     * Updates texture content, can also change texture format if necessary
      */
     update(image: TextureImage, options?: {
         premultiply?: boolean;
@@ -129,11 +129,16 @@ export class Texture {
     }
 
     /**
-     * @summary Method for accessing texture format by its internal format for cases, when these two are not the same
+     * Method for accessing texture format by its internal format for cases, when these two are not the same
      *  - specifically for special WebGL2 formats
      */
     textureFormatFromInternalFormat(internalFormat: TextureFormat) {
         let format: GLenum = internalFormat;
+
+        if (!WebGL2RenderingContext) {
+            return format;
+        }
+
         switch (internalFormat) {
             case WebGL2RenderingContext['RG8']:
                 format = WebGL2RenderingContext['RG'];
