@@ -449,7 +449,8 @@ export class MercatorTransform implements ITransform {
             if (shouldZoomIn) scaleY = screenHeight / (maxY - minY);
         }
 
-        const lngUnlimited = !this.lngRange || Math.abs(this.lngRange[0] - this.lngRange[1]) > 360;
+        const lngUnlimited = !lngRange || Math.abs(lngRange[0] - lngRange[1]) >= 1e6;
+
         if (lngRange && !lngUnlimited) {
             minX = wrap(
                 mercatorXfromLng(lngRange[0]) * worldSize,
