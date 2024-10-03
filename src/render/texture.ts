@@ -60,7 +60,7 @@ export class Texture {
         this.useMipmap = Boolean(options && options.useMipmap);
 
         // Use default maplibre format gl.RGBA to remain compatible with all users of the Texture class
-        const newFormat = options && options.format ? options.format : gl.RGBA;
+        const newFormat = options?.format ?? gl.RGBA;
         const formatChanged = this.format !== newFormat;
         this.format = newFormat;
 
