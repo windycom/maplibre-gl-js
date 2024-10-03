@@ -1,3 +1,12 @@
+## 4.7.1-beta.1
+
+- Added custom features that were not part of the main branch
+  - latitude bounds
+  - support for texture formats other than gl.RGBA used by raster tile sources
+  - exports for Event, Tile, SourceCache, and OverscaledTileID
+
+# === LeafletGL follows ===
+
 ## main
 
 ### ✨ Features and improvements

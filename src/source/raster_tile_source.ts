@@ -6,7 +6,7 @@ import {ResourceType} from '../util/request_manager';
 import {Event, ErrorEvent, Evented} from '../util/evented';
 import {loadTileJson} from './load_tilejson';
 import {TileBounds} from './tile_bounds';
-import {Texture} from '../render/texture';
+import {Texture, TextureFormat} from '../render/texture';
 
 import type {Source} from './source';
 import type {OverscaledTileID} from './tile_id';
@@ -66,6 +66,7 @@ export class RasterTileSource extends Evented implements Source {
     _loaded: boolean;
     _options: RasterSourceSpecification | RasterDEMSourceSpecification;
     _tileJSONRequest: AbortController;
+    _textureFormat: TextureFormat;
 
     constructor(id: string, options: RasterSourceSpecification | RasterDEMSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
         super();
@@ -80,9 +81,18 @@ export class RasterTileSource extends Evented implements Source {
         this.scheme = 'xyz';
         this.tileSize = 512;
         this._loaded = false;
+        this._textureFormat = WebGLRenderingContext.RGBA;
 
         this._options = extend({type: 'raster'}, options);
         extend(this, pick(options, ['url', 'scheme', 'tileSize']));
+    }
+
+    set textureFormat(format: TextureFormat) {
+        this._textureFormat = format;
+    }
+
+    get textureFormat(): TextureFormat {
+        return this._textureFormat;
     }
 
     async load() {
@@ -189,10 +199,12 @@ export class RasterTileSource extends Evented implements Source {
                 const gl = context.gl;
                 const img = response.data;
                 tile.texture = this.map.painter.getTileTexture(img.width);
+
                 if (tile.texture) {
-                    tile.texture.update(img, {useMipmap: true});
+                    // We need to update the format since tile textures are being reused by various sources
+                    tile.texture.update(img, {useMipmap: true, format: this.textureFormat});
                 } else {
-                    tile.texture = new Texture(context, img, gl.RGBA, {useMipmap: true});
+                    tile.texture = new Texture(context, img, this.textureFormat, {useMipmap: true});
                     tile.texture.bind(gl.LINEAR, gl.CLAMP_TO_EDGE, gl.LINEAR_MIPMAP_NEAREST);
                 }
                 tile.state = 'loaded';
