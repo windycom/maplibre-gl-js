@@ -3,6 +3,14 @@ import UnitBezier from '@mapbox/unitbezier';
 import type {Callback} from '../types/callback';
 
 /**
+ * Modulo function, as opposed to javascript's `%`, which is a remainder.
+ * This functions will return positive values, even if the first operand is negative.
+ */
+export function mod(n, m) {
+    return ((n % m) + m) % m;
+}
+
+/**
  * Given a value `t` that varies between 0 and 1, return
  * an interpolation function that eases between 0 and 1 in a pleasing
  * cubic in-out fashion.
