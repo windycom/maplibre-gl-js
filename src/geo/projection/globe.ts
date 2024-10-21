@@ -29,9 +29,12 @@ const granularitySettingsGlobe: SubdivisionGranularitySetting = new SubdivisionG
     // otherwise they will be visibly warped at high zooms (before mercator transition).
     // This si not needed on fill, because fill geometry tends to already be
     // highly tessellated and granular at high zooms.
-    // Minimal granularity of 8 seems to be enough to avoid warped raster tiles, while also minimizing triangle count.
+    // Minimal granularity of raster tiles needs to be high to avoid warping artifacts.
     tile: new SubdivisionGranularityExpression(128, 32),
-    stencil: new SubdivisionGranularityExpression(128, 4),
+    // Stencil granularity must never be higher than fill granularity,
+    // otherwise we would get seams in the oceans at zoom levels where
+    // stencil has higher granularity than fill.
+    stencil: new SubdivisionGranularityExpression(128, 1),
     circle: 3
 });
 
@@ -165,7 +168,7 @@ export class GlobeProjection implements Projection {
     }
 
     private _getMeshKey(options: CreateTileMeshOptions): string {
-        return `${options.granularity.toString(36)}_${options.generateBorders ? 'b' : ''}${options.extendToNorthPole ? 'n' : ''}${options.extendToSouthPole ? 's' : ''}`;
+        return `${options.granularity.toString(36)}_${options.generateBorders ? 'b' : ''}${options.extendToNorthPole ? 'n' : ''}${options.extendToSouthPole ? 's' : ''}${options.edgesToPlanetCenter ? 'c' : ''}`;
     }
 
     public getMeshFromTileID(context: Context, canonical: CanonicalTileID, hasBorder: boolean, allowPoles: boolean, usage: TileMeshUsage): Mesh {
@@ -179,6 +182,7 @@ export class GlobeProjection implements Projection {
             generateBorders: hasBorder,
             extendToNorthPole: north,
             extendToSouthPole: south,
+            edgesToPlanetCenter: hasBorder,
         });
     }
 

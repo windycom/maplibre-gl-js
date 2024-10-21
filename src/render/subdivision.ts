@@ -24,6 +24,9 @@ type SubdivisionResult = {
 export const NORTH_POLE_Y = -32768;
 export const SOUTH_POLE_Y = 32767;
 
+export const PLANET_CENTER_X = SOUTH_POLE_Y;
+export const PLANET_CENTER_Y = SOUTH_POLE_Y;
+
 class Subdivider {
     /**
      * Flattened vertex positions (xyxyxy).
@@ -459,20 +462,26 @@ class Subdivider {
     }
 
     /**
-     * Checks the internal vertex buffer for all vertices that might lie on the special pole coordinates and shifts them by one unit.
-     * Use for removing unintended pole vertices that might have been created during subdivision. After calling this function, actual pole vertices can be safely generated.
+     * Checks the internal vertex buffer for all vertices that might lie on the special pole or planet center coordinates and shifts them by one unit.
+     * Use for removing unintended pole or planet center vertices that might have been created during subdivision.
+     * After calling this function, actual pole or planet center vertices can be safely generated.
      */
-    private _ensureNoPoleVertices() {
+    private _ensureNoPoleOrCenterVertices() {
         const flattened = this._vertexBuffer;
 
         for (let i = 0; i < flattened.length; i += 2) {
+            const vx = flattened[i + 0];
+            if (vx === PLANET_CENTER_X) {
+                // Move slightly left
+                flattened[i + 0] = PLANET_CENTER_X - 1;
+            }
             const vy = flattened[i + 1];
             if (vy === NORTH_POLE_Y) {
                 // Move slightly down
                 flattened[i + 1] = NORTH_POLE_Y + 1;
             }
             if (vy === SOUTH_POLE_Y) {
-                // Move slightly down
+                // Move slightly up
                 flattened[i + 1] = SOUTH_POLE_Y - 1;
             }
         }
@@ -607,7 +616,7 @@ class Subdivider {
         }
 
         // Ensure no vertex has the special value used for pole vertices
-        this._ensureNoPoleVertices();
+        this._ensureNoPoleOrCenterVertices();
 
         // Add pole geometry if needed
         this._handlePoles(subdividedTriangles);

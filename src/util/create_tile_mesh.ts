@@ -2,7 +2,7 @@ import {Context} from '../gl/context';
 import {Mesh} from '../render/mesh';
 import {PosArray, TriangleIndexArray} from '../data/array_types.g';
 import {SegmentVector} from '../data/segment';
-import {NORTH_POLE_Y, SOUTH_POLE_Y} from '../render/subdivision';
+import {NORTH_POLE_Y, PLANET_CENTER_X, PLANET_CENTER_Y, SOUTH_POLE_Y} from '../render/subdivision';
 import {EXTENT} from '../data/extent';
 import posAttributes from '../data/pos_attributes';
 
@@ -35,6 +35,12 @@ export type CreateTileMeshOptions = {
      * This geometry replaces the mesh border along this edge, if one is present.
      */
     extendToSouthPole?: boolean;
+    /**
+     * When true, additional geometry that extends from tile edges to planet center is generated.
+     * This is useful for rendering stencil masks for globe projection.
+     * The generated triangles from edges to planet center will not have proper texture coordinates.
+     */
+    edgesToPlanetCenter?:boolean;
 };
 
 /**
@@ -124,8 +130,8 @@ export function createTileMesh<T extends IndicesType>(options: CreateTileMeshOpt
     const endX = granularity + (options.generateBorders ? 1 : 0);
     const endY = granularity + ((options.generateBorders || options.extendToSouthPole) ? 1 : 0);
 
-    const vertexCount = verticesPerAxisX * verticesPerAxisY;
-    const indexCount = quadsPerAxisX * quadsPerAxisY * 6;
+    const vertexCount = verticesPerAxisX * verticesPerAxisY + (options.edgesToPlanetCenter ? 1 : 0);
+    const indexCount = quadsPerAxisX * quadsPerAxisY * 6 + (options.edgesToPlanetCenter ? (granularity * 4 * 3) : 0);
 
     const overflows16bitIndices = verticesPerAxisX * verticesPerAxisY > (1 << 16);
 
@@ -201,6 +207,52 @@ export function createTileMesh<T extends IndicesType>(options: CreateTileMeshOpt
             indexArray[indexId++] = v1;
             indexArray[indexId++] = v2;
             indexArray[indexId++] = v3;
+        }
+    }
+
+    if (options.edgesToPlanetCenter) {
+        vertexArray[vertexId++] = PLANET_CENTER_X;
+        vertexArray[vertexId++] = PLANET_CENTER_Y;
+        const planetCenterIndex = vertexCount - 1;
+
+        // Left edge
+        for (let i = 0; i < granularity; i++) {
+            const v0 = -offsetX + (-offsetY + i) * verticesPerAxisX;
+            const v1 = -offsetX + (-offsetY + i + 1) * verticesPerAxisX;
+
+            indexArray[indexId++] = v0;
+            indexArray[indexId++] = planetCenterIndex;
+            indexArray[indexId++] = v1;
+        }
+
+        // Right edge
+        for (let i = 0; i < granularity; i++) {
+            const v0 = -offsetX + granularity + (-offsetY + i) * verticesPerAxisX;
+            const v1 = -offsetX + granularity + (-offsetY + i + 1) * verticesPerAxisX;
+
+            indexArray[indexId++] = v0;
+            indexArray[indexId++] = v1;
+            indexArray[indexId++] = planetCenterIndex;
+        }
+
+        // Top edge
+        for (let i = 0; i < granularity; i++) {
+            const v0 = (-offsetX + i) + (-offsetY * verticesPerAxisX);
+            const v1 = (-offsetX + i + 1) + (-offsetY * verticesPerAxisX);
+
+            indexArray[indexId++] = v0;
+            indexArray[indexId++] = v1;
+            indexArray[indexId++] = planetCenterIndex;
+        }
+
+        // Bottom edge
+        for (let i = 0; i < granularity; i++) {
+            const v0 = (-offsetX + i) + ((-offsetY + granularity) * verticesPerAxisX);
+            const v1 = (-offsetX + i + 1) + ((-offsetY + granularity) * verticesPerAxisX);
+
+            indexArray[indexId++] = v0;
+            indexArray[indexId++] = planetCenterIndex;
+            indexArray[indexId++] = v1;
         }
     }
 

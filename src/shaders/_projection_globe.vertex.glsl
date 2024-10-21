@@ -68,6 +68,10 @@ vec3 projectToSphere(vec2 posInTile) {
     if (posInTile.y > 32766.5) {
         pos = vec3(0.0, -1.0, 0.0);
     }
+    // Planet center
+    if (posInTile.x > 32766.5 && posInTile.y > 32766.5) {
+        pos = vec3(0.0, 0.0, 0.0);
+    }
 
     return pos;
 }
