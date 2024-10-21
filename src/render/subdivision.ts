@@ -440,6 +440,19 @@ class Subdivider {
         return subdividedLines;
     }
 
+    private _generateWireframe(triangles: Array<number>): Array<Array<number>> {
+        const lineIndices: Array<number> = [];
+        for (let i = 2; i < triangles.length; i += 2) {
+            const i0 = triangles[i - 2];
+            const i1 = triangles[i - 1];
+            const i2 = triangles[i - 0];
+            lineIndices.push(i0, i1);
+            lineIndices.push(i1, i2);
+            lineIndices.push(i2, i0);
+        }
+        return [lineIndices];
+    }
+
     /**
      * Adds pole geometry if needed.
      * @param subdividedTriangles - Array of generated triangle indices, new pole geometry is appended here.
@@ -573,6 +586,108 @@ class Subdivider {
     }
 
     /**
+     * Detects edges at the tile border and adds geometry
+     * that extends from the borders to the planet center.
+     * This fixes tiny seams caused by globe projection and tile clipping.
+     * Any geometry that extends beyond tile extents is guaranteed to be split
+     * at tile extents by previous subdivision steps, making it easy to detect here.
+     *
+     * Mutates the supplies vertex and index arrays.
+     * @param indices - Triangle indices. This array is appended with new primitives.
+     */
+    private _fillTileBorders(indices: Array<number>): void {
+        const flattened = this._vertexBuffer;
+
+        const minEdge = 0;
+        const maxEdge = EXTENT;
+
+        const iCenter = this._vertexToIndex(PLANET_CENTER_X, PLANET_CENTER_Y);
+
+        const numIndices = indices.length;
+        for (let primitiveIndex = 2; primitiveIndex < numIndices; primitiveIndex += 3) {
+            const i0 = indices[primitiveIndex - 2];
+            const i1 = indices[primitiveIndex - 1];
+            const i2 = indices[primitiveIndex];
+            const v0x = flattened[i0 * 2];
+            const v0y = flattened[i0 * 2 + 1];
+            const v1x = flattened[i1 * 2];
+            const v1y = flattened[i1 * 2 + 1];
+            const v2x = flattened[i2 * 2];
+            const v2y = flattened[i2 * 2 + 1];
+
+            const minX = Math.min(Math.min(v0x, v1x), v2x);
+            const minY = Math.min(Math.min(v0y, v1y), v2y);
+            const maxX = Math.max(Math.max(v0x, v1x), v2x);
+            const maxY = Math.max(Math.max(v0y, v1y), v2y);
+
+            if ((this._granularity >= 2) && (maxX < minEdge || maxY < minEdge || minX > maxEdge || minY > maxEdge)) {
+                // Only consider triangles whose bounding box lies inside the tile - avoids generating too much duplicate geometry.
+                // But if granularity is too low, no subdivision is done and triangles are not guaranteed to be split at tile edges,
+                // so another approach must be taken.
+                continue;
+            }
+
+            for (const edge of [[0, 1], [1, 2], [2, 0]]) {
+                const e0i = indices[primitiveIndex - edge[0]];
+                const e1i = indices[primitiveIndex - edge[1]];
+                const e0x = flattened[e0i * 2];
+                const e0y = flattened[e0i * 2 + 1];
+                const e1x = flattened[e1i * 2];
+                const e1y = flattened[e1i * 2 + 1];
+
+                // Left border
+                if (e0x <= minEdge && e1x <= minEdge) {
+                    if (e0y < e1y) {
+                        indices.push(e0i);
+                        indices.push(iCenter);
+                        indices.push(e1i);
+                    } else {
+                        indices.push(e0i);
+                        indices.push(e1i);
+                        indices.push(iCenter);
+                    }
+                }
+                // Right
+                if (e0x >= maxEdge && e1x >= maxEdge) {
+                    if (e0y > e1y) {
+                        indices.push(e0i);
+                        indices.push(iCenter);
+                        indices.push(e1i);
+                    } else {
+                        indices.push(e0i);
+                        indices.push(e1i);
+                        indices.push(iCenter);
+                    }
+                }
+                // Top border
+                if (e0y <= minEdge && e1y <= minEdge) {
+                    if (e0x > e1x) {
+                        indices.push(e0i);
+                        indices.push(iCenter);
+                        indices.push(e1i);
+                    } else {
+                        indices.push(e0i);
+                        indices.push(e1i);
+                        indices.push(iCenter);
+                    }
+                }
+                // Bottom
+                if (e0y >= maxEdge && e1y >= maxEdge) {
+                    if (e0x < e1x) {
+                        indices.push(e0i);
+                        indices.push(iCenter);
+                        indices.push(e1i);
+                    } else {
+                        indices.push(e0i);
+                        indices.push(e1i);
+                        indices.push(iCenter);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
      * Adds all vertices in the supplied flattened vertex buffer into the internal vertex buffer.
      */
     private _initializeVertices(flattened: Array<number>) {
@@ -586,9 +701,10 @@ class Subdivider {
      * Assumes a mesh of tile features - vertex coordinates are integers, visible range where subdivision happens is 0..8192.
      * @param polygon - The input polygon, specified as a list of vertex rings.
      * @param generateOutlineLines - When true, also generates line indices for outline of the supplied polygon.
+     * @param generateBorderWalls - When true, also generates extra walls that extend to planet center at any point where the geometry touches the tile border.
      * @returns Vertex and index buffers with subdivision applied.
      */
-    public subdividePolygonInternal(polygon: Array<Array<Point>>, generateOutlineLines: boolean): SubdivisionResult {
+    public subdividePolygonInternal(polygon: Array<Array<Point>>, generateOutlineLines: boolean, generateBorderWalls: boolean): SubdivisionResult {
         if (this._used) {
             throw new Error('Subdivision: multiple use not allowed.');
         }
@@ -613,6 +729,7 @@ class Subdivider {
         let subdividedLines: Array<Array<number>> = [];
         if (generateOutlineLines) {
             subdividedLines = this._generateOutline(polygon);
+            //subdividedLines = this._generateWireframe(subdividedTriangles);
         }
 
         // Ensure no vertex has the special value used for pole vertices
@@ -620,6 +737,10 @@ class Subdivider {
 
         // Add pole geometry if needed
         this._handlePoles(subdividedTriangles);
+
+        // if (generateBorderWalls) {
+        //     this._fillTileBorders(subdividedTriangles);
+        // }
 
         return {
             verticesFlattened: this._vertexBuffer,
@@ -669,11 +790,12 @@ class Subdivider {
  * divisible by 4096 (including outside the tile range, so -8192, -4096, or 12288...), granularity of 8 on axes divisible by 1024 and so on.
  * Granularity of 1 or lower results in *no* subdivision.
  * @param generateOutlineLines - When true, also generates index arrays for subdivided lines that form the outline of the supplied polygon. True by default.
+ * @param generateBorderWalls - When true, also generates extra walls that extend to planet center at any point where the geometry touches the tile border. True by default.
  * @returns An object that contains the generated vertex array, triangle index array and, if specified, line index arrays.
  */
-export function subdividePolygon(polygon: Array<Array<Point>>, canonical: CanonicalTileID, granularity: number, generateOutlineLines: boolean = true): SubdivisionResult {
+export function subdividePolygon(polygon: Array<Array<Point>>, canonical: CanonicalTileID, granularity: number, generateOutlineLines: boolean = true, generateBorderWalls: boolean = true): SubdivisionResult {
     const subdivider = new Subdivider(granularity, canonical);
-    return subdivider.subdividePolygonInternal(polygon, generateOutlineLines);
+    return subdivider.subdividePolygonInternal(polygon, generateOutlineLines, generateBorderWalls);
 }
 
 /**
