@@ -182,7 +182,7 @@ export class GlobeProjection implements Projection {
             generateBorders: hasBorder,
             extendToNorthPole: north,
             extendToSouthPole: south,
-            edgesToPlanetCenter: hasBorder,
+            edgesToPlanetCenter: false,
         });
     }
 
