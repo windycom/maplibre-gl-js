@@ -1,9 +1,17 @@
 import {LngLatBounds, LngLatBoundsLike} from '../geo/lng_lat_bounds';
 import {mercatorXfromLng, mercatorYfromLat} from '../geo/mercator_coordinate';
+import {mod} from '../util/util';
 
 import type {CanonicalTileID} from './tile_id';
 
+function fract(x: number): number {
+    return x - Math.floor(x);
+}
+
 export class TileBounds {
+    /**
+     * Coordinate bounds. Longitude is *not* clamped to [-180, 180]!
+     */
     bounds: LngLatBounds;
     minzoom: number;
     maxzoom: number;
@@ -17,18 +25,30 @@ export class TileBounds {
     validateBounds(bounds: [number, number, number, number]): LngLatBoundsLike {
         // make sure the bounds property contains valid longitude and latitudes
         if (!Array.isArray(bounds) || bounds.length !== 4) return [-180, -90, 180, 90];
-        return [Math.max(-180, bounds[0]), Math.max(-90, bounds[1]), Math.min(180, bounds[2]), Math.min(90, bounds[3])];
+        return [bounds[0], Math.max(-90, bounds[1]), bounds[2], Math.min(90, bounds[3])];
     }
 
     contains(tileID: CanonicalTileID) {
         const worldSize = Math.pow(2, tileID.z);
-        const level = {
-            minX: Math.floor(mercatorXfromLng(this.bounds.getWest()) * worldSize),
-            minY: Math.floor(mercatorYfromLat(this.bounds.getNorth()) * worldSize),
-            maxX: Math.ceil(mercatorXfromLng(this.bounds.getEast()) * worldSize),
-            maxY: Math.ceil(mercatorYfromLat(this.bounds.getSouth()) * worldSize)
-        };
-        const hit = tileID.x >= level.minX && tileID.x < level.maxX && tileID.y >= level.minY && tileID.y < level.maxY;
-        return hit;
+
+        // Latitude test
+        const minY = Math.floor(mercatorYfromLat(this.bounds.getNorth()) * worldSize);
+        const maxY = Math.ceil(mercatorYfromLat(this.bounds.getSouth()) * worldSize);
+
+        if (tileID.y < minY || tileID.y >= maxY) {
+            return false;
+        }
+
+        // Longitude test with wrapping around the globe
+        let minX = fract(mercatorXfromLng(this.bounds.getWest()));
+        let maxX = fract(mercatorXfromLng(this.bounds.getEast()));
+        if (minX >= maxX) {
+            maxX += 1;
+        }
+        minX = Math.floor(minX * worldSize);
+        maxX = Math.ceil(maxX * worldSize);
+
+        const wrappedTileX = mod(tileID.x, worldSize);
+        return (wrappedTileX >= minX && wrappedTileX < maxX) || (wrappedTileX + worldSize >= minX && wrappedTileX + worldSize < maxX);
     }
 }
