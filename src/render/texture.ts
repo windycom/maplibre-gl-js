@@ -134,6 +134,11 @@ export class Texture {
      */
     textureFormatFromInternalFormat(internalFormat: TextureFormat) {
         let format: GLenum = internalFormat;
+
+        if (this.context.gl instanceof WebGLRenderingContext) {
+            return format;
+        }
+
         switch (internalFormat) {
             case WebGL2RenderingContext['RG8']:
                 format = WebGL2RenderingContext['RG'];
