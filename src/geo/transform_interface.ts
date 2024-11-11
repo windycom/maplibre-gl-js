@@ -11,6 +11,7 @@ import {MapProjectionEvent} from '../ui/events';
 import type {ProjectionData, ProjectionDataParams} from './projection/projection_data';
 import {CoveringTilesDetailsProvider} from './projection/covering_tiles_details_provider';
 import {Frustum} from '../util/primitives/frustum';
+import {IBoundingPrimitive} from '../util/primitives/aabb';
 
 export type TransformUpdateResult = {
     forcePlacementUpdate?: boolean;
@@ -277,7 +278,7 @@ export interface IReadonlyTransform extends ITransformGetters {
      * @internal
      * Returns this transform's CoveringTilesDetailsProvider.
      */
-    getCoveringTilesDetailsProvider(): CoveringTilesDetailsProvider;
+    getCoveringTilesDetailsProvider(): CoveringTilesDetailsProvider<IBoundingPrimitive>;
 
     /**
      * @internal

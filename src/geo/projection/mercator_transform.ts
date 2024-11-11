@@ -16,7 +16,6 @@ import type {ProjectionData, ProjectionDataParams} from './projection_data';
 import {scaleZoom, TransformHelper, zoomScale} from '../transform_helper';
 import {MercatorCoveringTilesDetailsProvider} from './mercator_covering_tiles_details_provider';
 import {Frustum} from '../../util/primitives/frustum';
-import {CoveringTilesDetailsProvider} from './covering_tiles_details_provider';
 
 export class MercatorTransform implements ITransform {
     private _helper: TransformHelper;
@@ -277,7 +276,7 @@ export class MercatorTransform implements ITransform {
     getClippingPlane(): vec4 | null {
         return null;
     }
-    getCoveringTilesDetailsProvider(): CoveringTilesDetailsProvider {
+    getCoveringTilesDetailsProvider(): MercatorCoveringTilesDetailsProvider {
         return this._coveringTilesDetailsProvider;
     }
 

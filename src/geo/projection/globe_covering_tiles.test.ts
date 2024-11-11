@@ -49,7 +49,7 @@ describe('aabb creation', () => {
             y: 0,
             z: 2,
         }, null, null, null);
-        expectToBeCloseToArray([...aabb.min], [-0.3985368153383868, 0.9171523356672743, -7.321002528698027e-17,]);
-        expectToBeCloseToArray([...aabb.max], [0, 1, 0.3985368153383868]);
+        expectToBeCloseToArray([...aabb['_aabb'].min], [-0.3985368153383868, 0.9171523356672743, -7.321002528698027e-17,]);
+        expectToBeCloseToArray([...aabb['_aabb'].max], [0, 1, 0.3985368153383868]);
     });
 });

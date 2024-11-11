@@ -19,7 +19,6 @@ import {EXTENT} from '../../data/extent';
 import type {ProjectionData, ProjectionDataParams} from './projection_data';
 import {GlobeCoveringTilesDetailsProvider} from './globe_covering_tiles_details_provider';
 import {Frustum} from '../../util/primitives/frustum';
-import {CoveringTilesDetailsProvider} from './covering_tiles_details_provider';
 
 /**
  * Describes the intersection of ray and sphere.
@@ -697,7 +696,7 @@ export class GlobeTransform implements ITransform {
     getClippingPlane(): vec4 | null {
         return this.isGlobeRendering ? this._cachedClippingPlane : this._mercatorTransform.getClippingPlane();
     }
-    getCoveringTilesDetailsProvider(): CoveringTilesDetailsProvider {
+    getCoveringTilesDetailsProvider() {
         return this.isGlobeRendering ? this._coveringTilesDetailsProvider : this._mercatorTransform.getCoveringTilesDetailsProvider();
     }
 

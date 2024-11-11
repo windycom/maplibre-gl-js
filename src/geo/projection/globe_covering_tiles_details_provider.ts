@@ -5,8 +5,9 @@ import {EXTENT} from '../../data/extent';
 import {projectTileCoordinatesToSphere} from './globe_utils';
 import {CoveringTilesOptions, coveringZoomLevel} from './covering_tiles';
 import {CoveringTilesDetailsProvider} from './covering_tiles_details_provider';
-import {Aabb, IBoundingPrimitive} from '../../util/primitives/aabb';
+import {Aabb} from '../../util/primitives/aabb';
 import {AabbCache} from '../../util/primitives/aabb_cache';
+import {SphereTile} from '../../util/primitives/sphere_tile';
 
 /**
  * Computes distance of a point to a tile in an arbitrary axis.
@@ -38,8 +39,15 @@ function distanceToTileWrapX(pointX: number, pointY: number, tileCornerX: number
     return Math.max(distanceX, distanceToTileSimple(pointY, tileCornerY, tileSize));
 }
 
-export class GlobeCoveringTilesDetailsProvider implements CoveringTilesDetailsProvider {
-    private _aabbCache: AabbCache = new AabbCache(this._computeTileAABB);
+export class GlobeCoveringTilesDetailsProvider implements CoveringTilesDetailsProvider<SphereTile> {
+    private _aabbCache: AabbCache<SphereTile>;
+
+    constructor() {
+        const that = this;
+        this._aabbCache = new AabbCache<SphereTile>((tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions) => {
+            return that._computeTileBoundingObject(tileID, wrap, elevation, options);
+        });
+    }
 
     /**
      * Prepares the internal AABB cache for the next frame.
@@ -55,7 +63,7 @@ export class GlobeCoveringTilesDetailsProvider implements CoveringTilesDetailsPr
      * Handles distances on a sphere correctly: X is wrapped when crossing the antimeridian,
      * when crossing the poles Y is mirrored and X is shifted by half world size.
      */
-    distanceToTile2d(pointX: number, pointY: number, tileID: {x: number; y: number; z: number}, _aabb: Aabb): number {
+    distanceToTile2d(pointX: number, pointY: number, tileID: {x: number; y: number; z: number}, _aabb: SphereTile): number {
         const scale = 1 << tileID.z;
         const tileMercatorSize = 1.0 / scale;
         const tileCornerX = tileID.x / scale; // In range 0..1
@@ -98,11 +106,17 @@ export class GlobeCoveringTilesDetailsProvider implements CoveringTilesDetailsPr
         return coveringZoomLevel(transform, options) > 4;
     }
 
-    getTileBoundingPrimitive(tileID: { x: number; y: number; z: number }, wrap: number, elevation: number, options: CoveringTilesOptions) {
+    getTileBoundingPrimitive(tileID: { x: number; y: number; z: number }, wrap: number, elevation: number, options: CoveringTilesOptions): SphereTile {
         return this._aabbCache.getTileAABB(tileID, wrap, elevation, options);
     }
 
-    private _computeTileAABB(tileID: {x: number; y: number; z: number}, _wrap: number, _elevation: number, _options: CoveringTilesOptions): IBoundingPrimitive {
+    private _computeTileBoundingObject(tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions): SphereTile {
+        const aabb = this._computeTileAABB(tileID, wrap, elevation, options);
+        const sphereTile = new SphereTile(tileID, aabb);
+        return sphereTile;
+    }
+
+    private _computeTileAABB(tileID: {x: number; y: number; z: number}, _wrap: number, _elevation: number, _options: CoveringTilesOptions): Aabb {
         // We can get away with only checking the 4 tile corners for AABB construction, because for any tile of zoom level 2 or higher
         // it holds that the extremes (minimal or maximal value) of X, Y or Z coordinates must lie in one of the tile corners.
         //

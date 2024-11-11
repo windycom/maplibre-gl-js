@@ -6,7 +6,7 @@ import {IReadonlyTransform} from '../transform_interface';
 import {CoveringTilesOptions} from './covering_tiles';
 import {CoveringTilesDetailsProvider} from './covering_tiles_details_provider';
 
-export class MercatorCoveringTilesDetailsProvider implements CoveringTilesDetailsProvider {
+export class MercatorCoveringTilesDetailsProvider implements CoveringTilesDetailsProvider<Aabb> {
 
     distanceToTile2d(pointX: number, pointY: number, tileID: {x: number; y: number; z: number}, aabb: Aabb): number {
         const distanceX = aabb.distanceX([pointX, pointY]);
