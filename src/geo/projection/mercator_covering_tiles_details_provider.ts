@@ -25,7 +25,7 @@ export class MercatorCoveringTilesDetailsProvider implements CoveringTilesDetail
      * Returns the AABB of the specified tile.
      * @param tileID - Tile x, y and z for zoom.
      */
-    getTileAABB(tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions): Aabb {
+    getTileBoundingPrimitive(tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions): Aabb {
         let minElevation = elevation;
         let maxElevation = elevation;
         if (options.terrain) {

@@ -5,7 +5,7 @@ import {EXTENT} from '../../data/extent';
 import {projectTileCoordinatesToSphere} from './globe_utils';
 import {CoveringTilesOptions, coveringZoomLevel} from './covering_tiles';
 import {CoveringTilesDetailsProvider} from './covering_tiles_details_provider';
-import {Aabb} from '../../util/primitives/aabb';
+import {Aabb, IBoundingPrimitive} from '../../util/primitives/aabb';
 import {AabbCache} from '../../util/primitives/aabb_cache';
 
 /**
@@ -98,11 +98,11 @@ export class GlobeCoveringTilesDetailsProvider implements CoveringTilesDetailsPr
         return coveringZoomLevel(transform, options) > 4;
     }
 
-    getTileAABB(tileID: { x: number; y: number; z: number }, wrap: number, elevation: number, options: CoveringTilesOptions) {
+    getTileBoundingPrimitive(tileID: { x: number; y: number; z: number }, wrap: number, elevation: number, options: CoveringTilesOptions) {
         return this._aabbCache.getTileAABB(tileID, wrap, elevation, options);
     }
 
-    private _computeTileAABB(tileID: {x: number; y: number; z: number}, _wrap: number, _elevation: number, _options: CoveringTilesOptions): Aabb {
+    private _computeTileAABB(tileID: {x: number; y: number; z: number}, _wrap: number, _elevation: number, _options: CoveringTilesOptions): IBoundingPrimitive {
         // We can get away with only checking the 4 tile corners for AABB construction, because for any tile of zoom level 2 or higher
         // it holds that the extremes (minimal or maximal value) of X, Y or Z coordinates must lie in one of the tile corners.
         //

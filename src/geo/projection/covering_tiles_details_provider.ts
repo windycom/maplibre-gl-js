@@ -1,4 +1,4 @@
-import {Aabb} from '../../util/primitives/aabb';
+import {Aabb, IBoundingPrimitive} from '../../util/primitives/aabb';
 import {MercatorCoordinate} from '../mercator_coordinate';
 import {IReadonlyTransform} from '../transform_interface';
 import {CoveringTilesOptions} from './covering_tiles';
@@ -25,7 +25,7 @@ export interface CoveringTilesDetailsProvider {
      * @param elevation - camera center point elevation.
      * @param options - CoveringTilesOptions.
      */
-    getTileAABB: (tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions) => Aabb;
+    getTileBoundingPrimitive: (tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions) => IBoundingPrimitive;
 
     /**
      * Whether to allow variable zoom, which is used at high pitch angle to avoid loading an excessive amount of tiles.

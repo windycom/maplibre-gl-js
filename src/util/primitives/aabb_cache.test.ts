@@ -3,13 +3,13 @@ import {GlobeCoveringTilesDetailsProvider} from '../../geo/projection/globe_cove
 describe('aabb cache', () => {
     test('retains aabbs from last frame', () => {
         const detailsProvider = new GlobeCoveringTilesDetailsProvider();
-        const aabb1a = detailsProvider.getTileAABB({
+        const aabb1a = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
         }, null, null, null);
         detailsProvider.newFrame();
-        const aabb1b = detailsProvider.getTileAABB({
+        const aabb1b = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
@@ -20,51 +20,51 @@ describe('aabb cache', () => {
     test('clears no longer used aabbs', () => {
         const detailsProvider = new GlobeCoveringTilesDetailsProvider();
         // Get 1+2+3
-        const box1a = detailsProvider.getTileAABB({
+        const box1a = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box2a = detailsProvider.getTileAABB({
+        const box2a = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3a = detailsProvider.getTileAABB({
+        const box3a = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,
         }, null, null, null);
         detailsProvider.newFrame();
         // Get 2+3+4
-        const box2b = detailsProvider.getTileAABB({
+        const box2b = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3b = detailsProvider.getTileAABB({
+        const box3b = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,
         }, null, null, null);
-        const box4b = detailsProvider.getTileAABB({
+        const box4b = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 1,
             z: 1,
         }, null, null, null);
         detailsProvider.newFrame();
         // Get 1+3+4
-        const box1c = detailsProvider.getTileAABB({
+        const box1c = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3c = detailsProvider.getTileAABB({
+        const box3c = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,
         }, null, null, null);
-        const box4c = detailsProvider.getTileAABB({
+        const box4c = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 1,
             z: 1,
@@ -86,41 +86,41 @@ describe('aabb cache', () => {
     test('does not clear cache if no new box was added', () => {
         const detailsProvider = new GlobeCoveringTilesDetailsProvider();
         // Get 1+2+3
-        const box1a = detailsProvider.getTileAABB({
+        const box1a = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box2a = detailsProvider.getTileAABB({
+        const box2a = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3a = detailsProvider.getTileAABB({
+        const box3a = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,
         }, null, null, null);
         detailsProvider.newFrame();
         // Get 2+3
-        const box2b = detailsProvider.getTileAABB({
+        const box2b = detailsProvider.getTileBoundingPrimitive({
             x: 1,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3b = detailsProvider.getTileAABB({
+        const box3b = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,
         }, null, null, null);
         detailsProvider.newFrame();
         // Get 1+3
-        const box1c = detailsProvider.getTileAABB({
+        const box1c = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 0,
             z: 1,
         }, null, null, null);
-        const box3c = detailsProvider.getTileAABB({
+        const box3c = detailsProvider.getTileBoundingPrimitive({
             x: 0,
             y: 1,
             z: 1,

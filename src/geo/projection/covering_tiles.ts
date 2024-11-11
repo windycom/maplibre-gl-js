@@ -6,7 +6,7 @@ import {scaleZoom} from '../transform_helper';
 import {clamp, degreesToRadians} from '../../util/util';
 import {Terrain} from '../../render/terrain';
 import {Frustum} from '../../util/primitives/frustum';
-import {Aabb, IntersectionResult} from '../../util/primitives/aabb';
+import {IBoundingPrimitive, IntersectionResult} from '../../util/primitives/aabb';
 
 type CoveringTilesResult = {
     tileID: OverscaledTileID;
@@ -78,13 +78,13 @@ export type CalculateTileZoomFunction = (requestedCenterZoom: number,
  * A simple/heuristic function that returns whether the tile is visible under the current transform.
  * @returns an {@link IntersectionResult}.
  */
-export function isTileVisible(frustum: Frustum, aabb: Aabb, plane?: vec4): IntersectionResult {
+export function isTileVisible(frustum: Frustum, boundingPrimitive: IBoundingPrimitive, plane?: vec4): IntersectionResult {
 
-    const frustumTest = aabb.intersectsFrustum(frustum);
+    const frustumTest = boundingPrimitive.intersectsFrustum(frustum);
     if (!plane) {
         return frustumTest;
     }
-    const planeTest = aabb.intersectsPlane(plane);
+    const planeTest = boundingPrimitive.intersectsPlane(plane);
 
     if (frustumTest === IntersectionResult.None || planeTest === IntersectionResult.None) {
         return IntersectionResult.None;
@@ -203,7 +203,7 @@ export function coveringTiles(transform: IReadonlyTransform, options: CoveringTi
         const y = it.y;
         let fullyVisible = it.fullyVisible;
         const tileID = {x, y, z: it.zoom};
-        const aabb = detailsProvider.getTileAABB(tileID, it.wrap, transform.elevation, options);
+        const aabb = detailsProvider.getTileBoundingPrimitive(tileID, it.wrap, transform.elevation, options);
 
         // Visibility of a tile is not required if any of its ancestor is fully visible
         if (!fullyVisible) {

@@ -1,11 +1,11 @@
 import {type CoveringTilesOptions} from '../../geo/projection/covering_tiles';
-import {Aabb} from './aabb';
+import {IBoundingPrimitive} from './aabb';
 
-type AabbFactory = (tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions) => Aabb;
+type AabbFactory = (tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions) => IBoundingPrimitive;
 
 export class AabbCache {
-    private _cachePrevious: Map<string, Aabb> = new Map();
-    private _cache: Map<string, Aabb> = new Map();
+    private _cachePrevious: Map<string, IBoundingPrimitive> = new Map();
+    private _cache: Map<string, IBoundingPrimitive> = new Map();
     private _hadAnyChanges = false;
     private _aabbFactory: AabbFactory;
 
@@ -34,7 +34,7 @@ export class AabbCache {
      * Returns the AABB of the specified tile, fetching it from cache or creating it using the factory function if needed.
      * @param tileID - Tile x, y and z for zoom.
      */
-    getTileAABB(tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions): Aabb {
+    getTileAABB(tileID: {x: number; y: number; z: number}, wrap: number, elevation: number, options: CoveringTilesOptions): IBoundingPrimitive {
         const key = `${tileID.z}_${tileID.x}_${tileID.y}`;
         const cached = this._cache.get(key);
         if (cached) {

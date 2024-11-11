@@ -7,7 +7,12 @@ export const enum IntersectionResult {
     Full = 2,
 }
 
-export class Aabb {
+export interface IBoundingPrimitive {
+    intersectsFrustum(frustum: Frustum): IntersectionResult;
+    intersectsPlane(plane: vec4): IntersectionResult;
+}
+
+export class Aabb implements IBoundingPrimitive {
     min: vec3;
     max: vec3;
     center: vec3;
