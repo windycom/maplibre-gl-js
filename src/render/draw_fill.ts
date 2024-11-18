@@ -57,6 +57,36 @@ export function drawFill(painter: Painter, sourceCache: SourceCache, layer: Fill
     }
 }
 
+function getStencilVal(coord: OverscaledTileID): number {
+    const index = (coord.canonical.z & 1) * 4 + (coord.canonical.y & 1) * 2 + (coord.canonical.x & 1);
+    return 1 << index;
+}
+
+function prepareStencil(painter: Painter, coords: Array<OverscaledTileID>): void {
+    const context = painter.context;
+    const gl = context.gl;
+    const projection = painter.style.projection;
+    const transform = painter.transform;
+
+    const program = painter.useProgram('clippingMask');
+
+    painter.clearStencil();
+
+    // tiles are usually supplied in ascending order of z, then y, then x
+    for (const coord of coords) {
+        const stencilMask = getStencilVal(coord);
+        const mesh = projection.getMeshFromTileID(context, coord.canonical, true, true, 'stencil');
+        const projectionData = transform.getProjectionData({overscaledTileID: coord});
+
+        program.draw(context, gl.TRIANGLES, DepthMode.disabled,
+            // Tests will always pass, and ref value will be written to stencil buffer.
+            new StencilMode({func: gl.ALWAYS, mask: 0}, 0xFF, stencilMask, gl.KEEP, gl.KEEP, gl.REPLACE),
+            ColorMode.disabled, painter.renderToTexture ? CullFaceMode.disabled : CullFaceMode.backCCW, null,
+            null, projectionData, '$clipping', mesh.vertexBuffer,
+            mesh.indexBuffer, mesh.segments);
+    }
+}
+
 function drawFillTiles(
     painter: Painter,
     sourceCache: SourceCache,
@@ -76,6 +106,14 @@ function drawFillTiles(
 
     const propertyFillTranslate = layer.paint.get('fill-translate');
     const propertyFillTranslateAnchor = layer.paint.get('fill-translate-anchor');
+    const globeWithTerrain = painter.style.map.terrain && painter.style.projection.name === 'globe';
+
+    const allowOverlapStencil = !globeWithTerrain && !isOutline;
+
+    if (allowOverlapStencil) {
+        // A special stencil strategy is used. TODO.
+        prepareStencil(painter, coords);
+    }
 
     if (!isOutline) {
         programName = image ? 'fillPattern' : 'fill';
@@ -106,7 +144,6 @@ function drawFillTiles(
 
         updatePatternPositionsInProgram(programConfiguration, fillPropertyName, constantPattern, tile, layer);
 
-        const globeWithTerrain = painter.style.map.terrain && painter.style.projection.name === 'globe';
         const projectionData = transform.getProjectionData({
             overscaledTileID: coord,
             ignoreGlobeMatrix: globeWithTerrain
@@ -128,15 +165,20 @@ function drawFillTiles(
         }
 
         let stencil: StencilMode;
-        if (painter.renderPass === 'translucent') {
-            if (globeWithTerrain) {
-                const [stencilModes] = painter.stencilConfigForOverlap(coords);
-                stencil = stencilModes[coord.overscaledZ];
-            } else {
-                stencil = painter.stencilModeForClipping(coord);
-            }
+        if (allowOverlapStencil) {
+            const stencilMask = getStencilVal(coord);
+            stencil = new StencilMode({func: gl.EQUAL, mask: stencilMask}, 0xFF, 0x00, gl.KEEP, gl.KEEP, gl.KEEP);
         } else {
-            stencil = StencilMode.disabled;
+            if (painter.renderPass === 'translucent') {
+                if (globeWithTerrain) {
+                    const [stencilModes] = painter.stencilConfigForOverlap(coords);
+                    stencil = stencilModes[coord.overscaledZ];
+                } else {
+                    stencil = painter.stencilModeForClipping(coord);
+                }
+            } else {
+                stencil = StencilMode.disabled;
+            }
         }
 
         program.draw(painter.context, drawMode, depthMode,

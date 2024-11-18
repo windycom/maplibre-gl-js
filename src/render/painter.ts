@@ -214,7 +214,7 @@ export class Painter {
     }
 
     /*
-     * Reset the drawing canvas by clearing the stencil buffer so that we can draw
+     * Reset the drawing canvas by clearing the stencil buffer to zeroes so that we can draw
      * new tiles at the same location, while retaining previously drawn pixels.
      */
     clearStencil() {

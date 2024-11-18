@@ -10,7 +10,7 @@ import posAttributes from '../data/pos_attributes';
  * The size of border region for stencil masks, in internal tile coordinates.
  * Used for globe rendering.
  */
-const EXTENT_STENCIL_BORDER = EXTENT / 128;
+const EXTENT_STENCIL_BORDER = EXTENT / 16;
 
 /**
  * Options for generating a tile mesh.
