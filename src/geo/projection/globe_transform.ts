@@ -1186,19 +1186,15 @@ export class GlobeTransform implements ITransform {
     }
 
     getProjectionDataForCustomLayer(applyGlobeMatrix: boolean = true): ProjectionData {
+        const mercatorData = this._mercatorTransform.getProjectionDataForCustomLayer(applyGlobeMatrix);
+
+        if (!this.isGlobeRendering) {
+            return mercatorData;
+        }
+
         const projectionData = this.getProjectionData({overscaledTileID: new OverscaledTileID(0, 0, 0, 0, 0), applyGlobeMatrix});
         projectionData.tileMercatorCoords = [0, 0, 1, 1];
-
-        // Even though we requested projection data for the mercator base tile which covers the entire mercator range,
-        // the shader projection machinery still expects inputs to be in tile units range [0..EXTENT].
-        // Since custom layers are expected to supply mercator coordinates [0..1], we need to rescale
-        // the fallback projection matrix by EXTENT.
-        // Note that the regular projection matrices do not need to be modified, since the rescaling happens by setting
-        // the `u_projection_tile_mercator_coords` uniform correctly.
-        const fallbackMatrixScaled = createMat4f32();
-        mat4.scale(fallbackMatrixScaled, projectionData.fallbackMatrix, [EXTENT, EXTENT, 1]);
-
-        projectionData.fallbackMatrix = fallbackMatrixScaled;
+        projectionData.fallbackMatrix = mercatorData.mainMatrix;
         return projectionData;
     }
 
