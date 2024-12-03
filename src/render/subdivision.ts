@@ -24,631 +24,616 @@ type SubdivisionResult = {
 export const NORTH_POLE_Y = -32768;
 export const SOUTH_POLE_Y = 32767;
 
-class Subdivider {
-    /**
-     * Flattened vertex positions (xyxyxy).
-     */
-    private _vertexBuffer: Array<number> = [];
+class SubdivisionContext {
+    public _vertexDictionary: Map<number, number> = new Map<number, number>();
+    public _vertexBuffer: Array<number> = [];
+};
 
-    /**
-     * Map of "vertex x and y coordinate" to "index of such vertex".
-     */
-    private _vertexDictionary: Map<number, number> = new Map<number, number>();
-    private _used: boolean = false;
+function _getKey(x: number, y: number) {
+    // Assumes signed 16 bit positions.
+    x = x + 32768;
+    y = y + 32768;
+    return (x << 16) | (y << 0);
+}
 
-    private readonly _canonical: CanonicalTileID;
+/**
+ * Returns an index into the internal vertex buffer for a vertex at the given coordinates.
+ * If the internal vertex buffer contains no such vertex, then it is added.
+ */
+function _vertexToIndex(context: SubdivisionContext, x: number, y: number): number {
+    if (x < -32768 || y < -32768 || x > 32767 || y > 32767) {
+        throw new Error('Vertex coordinates are out of signed 16 bit integer range.');
+    }
+    const xInt = Math.round(x) | 0;
+    const yInt = Math.round(y) | 0;
+    const key = _getKey(xInt, yInt);
+    if (context._vertexDictionary.has(key)) {
+        return context._vertexDictionary.get(key);
+    }
+    const index = context._vertexBuffer.length / 2;
+    context._vertexDictionary.set(key, index);
+    context._vertexBuffer.push(xInt, yInt);
+    return index;
+}
 
-    private readonly _granularity;
-    private readonly _granularityCellSize;
+/**
+ * Subdivides a polygon by iterating over rows of granularity subdivision cells and splitting each row along vertical subdivision axes.
+ * @param inputIndices - Indices into the internal vertex buffer of the triangulated polygon (after running `earcut`).
+ * @returns Indices into the internal vertex buffer for triangles that are a subdivision of the input geometry.
+ */
+function _subdivideTrianglesScanline(context: SubdivisionContext, _granularity: number, _granularityCellSize: number, inputIndices: Array<number>): Array<number> {
+    // A granularity cell is the square space between axes that subdivide geometry.
+    // For granularity 8, cells would be 1024 by 1024 units.
+    // For each triangle, we iterate over all cell rows it intersects, and generate subdivided geometry
+    // only within one cell row at a time. This way, we implicitly subdivide along the X-parallel axes (cell row boundaries).
+    // For each cell row, we generate an ordered point ring that describes the subdivided geometry inside this row (an intersection of the triangle and a given cell row).
+    // Such ordered ring can be trivially triangulated.
+    // Each ring may consist of sections of triangle edges that lie inside the cell row, and cell boundaries that lie inside the triangle. Both must be further subdivided along Y-parallel axes.
+    // Most complexity of this function comes from generating correct vertex rings, and from placing the vertices into the ring in the correct order.
 
-    constructor(granularity: number, canonical: CanonicalTileID) {
-        this._granularity = granularity;
-        this._granularityCellSize = EXTENT / granularity;
-        this._canonical = canonical;
+    if (_granularity < 2) {
+        // The actual subdivision code always produces triangles with the correct winding order.
+        // Also apply winding order correction when skipping subdivision altogether to maintain consistency.
+        return fixWindingOrder(context._vertexBuffer, inputIndices);
     }
 
-    private _getKey(x: number, y: number) {
-        // Assumes signed 16 bit positions.
-        x = x + 32768;
-        y = y + 32768;
-        return (x << 16) | (y << 0);
+    const finalIndices = [];
+
+    // Iterate over all input triangles
+    const numIndices = inputIndices.length;
+    for (let primitiveIndex = 0; primitiveIndex < numIndices; primitiveIndex += 3) {
+        const triangleIndices: [number, number, number] = [
+            inputIndices[primitiveIndex + 0], // v0
+            inputIndices[primitiveIndex + 1], // v1
+            inputIndices[primitiveIndex + 2], // v2
+        ];
+
+        const triangleVertices: [number, number, number, number, number, number] = [
+            context._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 0], // v0.x
+            context._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 1], // v0.y
+            context._vertexBuffer[inputIndices[primitiveIndex + 1] * 2 + 0], // v1.x
+            context._vertexBuffer[inputIndices[primitiveIndex + 1] * 2 + 1], // v1.y
+            context._vertexBuffer[inputIndices[primitiveIndex + 2] * 2 + 0], // v2.x
+            context._vertexBuffer[inputIndices[primitiveIndex + 2] * 2 + 1], // v2.y
+        ];
+
+        let minX = Infinity;
+        let minY = Infinity;
+        let maxX = -Infinity;
+        let maxY = -Infinity;
+
+        // Compute AABB
+        for (let i = 0; i < 3; i++) {
+            const vx = triangleVertices[i * 2];
+            const vy = triangleVertices[i * 2 + 1];
+            minX = Math.min(minX, vx);
+            maxX = Math.max(maxX, vx);
+            minY = Math.min(minY, vy);
+            maxY = Math.max(maxY, vy);
+        }
+
+        if (minX === maxX || minY === maxY) {
+            continue; // Skip degenerate linear axis-aligned triangles
+        }
+
+        const cellXmin = Math.floor(minX / _granularityCellSize);
+        const cellXmax = Math.ceil(maxX / _granularityCellSize);
+        const cellYmin = Math.floor(minY / _granularityCellSize);
+        const cellYmax = Math.ceil(maxY / _granularityCellSize);
+
+        // Skip subdividing triangles that do not span multiple cells - just add them "as is".
+        if (cellXmin === cellXmax && cellYmin === cellYmax) {
+            finalIndices.push(...triangleIndices);
+            continue;
+        }
+
+        // Iterate over cell rows that intersect this triangle
+        for (let cellRow = cellYmin; cellRow < cellYmax; cellRow++) {
+            const ring = _scanlineGenerateVertexRingForCellRow(context, _granularityCellSize, cellRow, triangleVertices, triangleIndices);
+            scanlineTriangulateVertexRing(context._vertexBuffer, ring, finalIndices);
+        }
     }
 
-    /**
-     * Returns an index into the internal vertex buffer for a vertex at the given coordinates.
-     * If the internal vertex buffer contains no such vertex, then it is added.
-     */
-    private _vertexToIndex(x: number, y: number): number {
-        if (x < -32768 || y < -32768 || x > 32767 || y > 32767) {
-            throw new Error('Vertex coordinates are out of signed 16 bit integer range.');
-        }
-        const xInt = Math.round(x) | 0;
-        const yInt = Math.round(y) | 0;
-        const key = this._getKey(xInt, yInt);
-        if (this._vertexDictionary.has(key)) {
-            return this._vertexDictionary.get(key);
-        }
-        const index = this._vertexBuffer.length / 2;
-        this._vertexDictionary.set(key, index);
-        this._vertexBuffer.push(xInt, yInt);
-        return index;
-    }
+    return finalIndices;
+}
 
-    /**
-     * Subdivides a polygon by iterating over rows of granularity subdivision cells and splitting each row along vertical subdivision axes.
-     * @param inputIndices - Indices into the internal vertex buffer of the triangulated polygon (after running `earcut`).
-     * @returns Indices into the internal vertex buffer for triangles that are a subdivision of the input geometry.
-     */
-    private _subdivideTrianglesScanline(inputIndices: Array<number>): Array<number> {
-        // A granularity cell is the square space between axes that subdivide geometry.
-        // For granularity 8, cells would be 1024 by 1024 units.
-        // For each triangle, we iterate over all cell rows it intersects, and generate subdivided geometry
-        // only within one cell row at a time. This way, we implicitly subdivide along the X-parallel axes (cell row boundaries).
-        // For each cell row, we generate an ordered point ring that describes the subdivided geometry inside this row (an intersection of the triangle and a given cell row).
-        // Such ordered ring can be trivially triangulated.
-        // Each ring may consist of sections of triangle edges that lie inside the cell row, and cell boundaries that lie inside the triangle. Both must be further subdivided along Y-parallel axes.
-        // Most complexity of this function comes from generating correct vertex rings, and from placing the vertices into the ring in the correct order.
+/**
+ * Takes a triangle and a cell row index, returns a subdivided vertex ring of the intersection of the triangle and the cell row.
+ * @param cellRow - Index of the cell row. A cell row of index `i` covert range from `i * granularityCellSize` to `(i + 1) * granularityCellSize`.
+ * @param triangleVertices - An array of 6 elements, contains flattened positions of the triangle's vertices: `[v0x, v0y, v1x, v1y, v2x, v2y]`.
+ * @param triangleIndices - An array of 3 elements, contains the original indices of the triangle's vertices: `[index0, index1, index2]`.
+ * @returns The resulting ring of vertex indices and the index (to the returned ring array) of the leftmost vertex in the ring.
+ */
+function _scanlineGenerateVertexRingForCellRow(
+    context: SubdivisionContext,
+    _granularityCellSize: number,
+    cellRow: number,
+    triangleVertices: [number, number, number, number, number, number],
+    triangleIndices: [number, number, number]
+) {
+    const cellRowYTop = cellRow * _granularityCellSize;
+    const cellRowYBottom = cellRowYTop + _granularityCellSize;
+    const ring = [];
 
-        if (this._granularity < 2) {
-            // The actual subdivision code always produces triangles with the correct winding order.
-            // Also apply winding order correction when skipping subdivision altogether to maintain consistency.
-            return fixWindingOrder(this._vertexBuffer, inputIndices);
-        }
-
-        const finalIndices = [];
-
-        // Iterate over all input triangles
-        const numIndices = inputIndices.length;
-        for (let primitiveIndex = 0; primitiveIndex < numIndices; primitiveIndex += 3) {
-            const triangleIndices: [number, number, number] = [
-                inputIndices[primitiveIndex + 0], // v0
-                inputIndices[primitiveIndex + 1], // v1
-                inputIndices[primitiveIndex + 2], // v2
-            ];
-
-            const triangleVertices: [number, number, number, number, number, number] = [
-                this._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 0], // v0.x
-                this._vertexBuffer[inputIndices[primitiveIndex + 0] * 2 + 1], // v0.y
-                this._vertexBuffer[inputIndices[primitiveIndex + 1] * 2 + 0], // v1.x
-                this._vertexBuffer[inputIndices[primitiveIndex + 1] * 2 + 1], // v1.y
-                this._vertexBuffer[inputIndices[primitiveIndex + 2] * 2 + 0], // v2.x
-                this._vertexBuffer[inputIndices[primitiveIndex + 2] * 2 + 1], // v2.y
-            ];
-
-            let minX = Infinity;
-            let minY = Infinity;
-            let maxX = -Infinity;
-            let maxY = -Infinity;
-
-            // Compute AABB
-            for (let i = 0; i < 3; i++) {
-                const vx = triangleVertices[i * 2];
-                const vy = triangleVertices[i * 2 + 1];
-                minX = Math.min(minX, vx);
-                maxX = Math.max(maxX, vx);
-                minY = Math.min(minY, vy);
-                maxY = Math.max(maxY, vy);
-            }
-
-            if (minX === maxX || minY === maxY) {
-                continue; // Skip degenerate linear axis-aligned triangles
-            }
-
-            const cellXmin = Math.floor(minX / this._granularityCellSize);
-            const cellXmax = Math.ceil(maxX / this._granularityCellSize);
-            const cellYmin = Math.floor(minY / this._granularityCellSize);
-            const cellYmax = Math.ceil(maxY / this._granularityCellSize);
-
-            // Skip subdividing triangles that do not span multiple cells - just add them "as is".
-            if (cellXmin === cellXmax && cellYmin === cellYmax) {
-                finalIndices.push(...triangleIndices);
-                continue;
-            }
-
-            // Iterate over cell rows that intersect this triangle
-            for (let cellRow = cellYmin; cellRow < cellYmax; cellRow++) {
-                const ring = this._scanlineGenerateVertexRingForCellRow(cellRow, triangleVertices, triangleIndices);
-                scanlineTriangulateVertexRing(this._vertexBuffer, ring, finalIndices);
-            }
-        }
-
-        return finalIndices;
-    }
-
-    /**
-     * Takes a triangle and a cell row index, returns a subdivided vertex ring of the intersection of the triangle and the cell row.
-     * @param cellRow - Index of the cell row. A cell row of index `i` covert range from `i * granularityCellSize` to `(i + 1) * granularityCellSize`.
-     * @param triangleVertices - An array of 6 elements, contains flattened positions of the triangle's vertices: `[v0x, v0y, v1x, v1y, v2x, v2y]`.
-     * @param triangleIndices - An array of 3 elements, contains the original indices of the triangle's vertices: `[index0, index1, index2]`.
-     * @returns The resulting ring of vertex indices and the index (to the returned ring array) of the leftmost vertex in the ring.
-     */
-    private _scanlineGenerateVertexRingForCellRow(
-        cellRow: number,
-        triangleVertices: [number, number, number, number, number, number],
-        triangleIndices: [number, number, number]
-    ) {
-        const cellRowYTop = cellRow * this._granularityCellSize;
-        const cellRowYBottom = cellRowYTop + this._granularityCellSize;
-        const ring = [];
-
-        // Generate the vertex ring
-        for (let edgeIndex = 0; edgeIndex < 3; edgeIndex++) {
-            // Current edge that will be subdivided: a --> b
-            // The remaining vertex of the triangle: c
-            const aX = triangleVertices[edgeIndex * 2];
-            const aY = triangleVertices[edgeIndex * 2 + 1];
-            const bX = triangleVertices[((edgeIndex + 1) * 2) % 6];
-            const bY = triangleVertices[((edgeIndex + 1) * 2 + 1) % 6];
-            const cX = triangleVertices[((edgeIndex + 2) * 2) % 6];
-            const cY = triangleVertices[((edgeIndex + 2) * 2 + 1) % 6];
-            // Edge direction
-            const dirX = bX - aX;
-            const dirY = bY - aY;
-
-            // Edges parallel with either axis will need special handling later.
-            const isParallelY = dirX === 0;
-            const isParallelX = dirY === 0;
-
-            // Distance along edge where it enters/exits current cell row,
-            // where distance 0 is the edge start point, 1 the endpoint, 0.5 the mid point, etc.
-            const tTop = (cellRowYTop - aY) / dirY;
-            const tBottom = (cellRowYBottom - aY) / dirY;
-            const tEnter = Math.min(tTop, tBottom);
-            const tExit = Math.max(tTop, tBottom);
-
-            // Determine if edge lies entirely outside this cell row.
-            // Check entry and exit points, or if edge is parallel with X, check its Y coordinate.
-            if ((!isParallelX && (tEnter >= 1 || tExit <= 0)) ||
-                (isParallelX && (aY < cellRowYTop || aY > cellRowYBottom))) {
-                // Skip this edge
-                // But make sure to add its endpoint vertex if needed.
-                if (bY >= cellRowYTop && bY <= cellRowYBottom) {
-                    // The edge endpoint is withing this row, add it to the ring
-                    ring.push(triangleIndices[(edgeIndex + 1) % 3]);
-                }
-                continue;
-            }
-
-            // Do not add original triangle vertices now, those are handled separately later
-
-            // Special case: edge vertex for entry into cell row
-            // If edge is parallel with X axis, there is no entry vertex
-            if (!isParallelX && tEnter > 0) {
-                const x = aX + dirX * tEnter;
-                const y = aY + dirY * tEnter;
-                ring.push(this._vertexToIndex(x, y));
-            }
-
-            // The X coordinates of the points where the edge enters/exits the current cell row,
-            // or the edge start/endpoint, if the entry/exit happens beyond the edge bounds.
-            const enterX = aX + dirX * Math.max(tEnter, 0);
-            const exitX = aX + dirX * Math.min(tExit, 1);
-
-            // Generate edge interior vertices
-            // No need to subdivide (along X) edges that are parallel with Y
-            if (!isParallelY) {
-                this._generateIntraEdgeVertices(ring, aX, aY, bX, bY, enterX, exitX);
-            }
-
-            // Special case: edge vertex for exit from cell row
-            if (!isParallelX && tExit < 1) {
-                const x = aX + dirX * tExit;
-                const y = aY + dirY * tExit;
-                ring.push(this._vertexToIndex(x, y));
-            }
-
-            // When to split inter-edge boundary segments?
-            // When the boundary doesn't intersect a vertex, its easy. But what if it does?
-
-            //      a
-            //     /|
-            //    / |
-            // --c--|--boundary
-            //    \ |
-            //     \|
-            //      b
-            //
-            // Inter-edge region should be generated when processing the a-b edge.
-            // This happens fine for the top row, for the bottom row,
-            //
-
-            //      x
-            //     /|
-            //    / |
-            // --x--x--boundary
-            //
-            // Edge that lies on boundary should be subdivided in its edge phase.
-            // The inter-edge phase will correctly skip it.
-
-            // Add endpoint vertex
-            if (isParallelX || (bY >= cellRowYTop && bY <= cellRowYBottom)) {
-                ring.push(triangleIndices[(edgeIndex + 1) % 3]);
-            }
-            // Any edge that has endpoint outside this row or on its boundary gets
-            // inter-edge vertices.
-            // No row boundary to split for edges parallel with X
-            if (!isParallelX && (bY <= cellRowYTop || bY >= cellRowYBottom)) {
-                this._generateInterEdgeVertices(ring, aX, aY, bX, bY, cX, cY,
-                    exitX, cellRowYTop, cellRowYBottom);
-            }
-        }
-
-        return ring;
-    }
-
-    /**
-     * Generates ring vertices along an edge A-\>B, but only in the part that intersects a given cell row.
-     * Does not handle adding edge endpoint vertices or edge cell row enter/exit vertices.
-     * @param ring - Ordered array of vertex indices for the constructed ring. New indices are placed here.
-     * @param enterX - The X coordinate of the point where edge A-\>B enters the current cell row.
-     * @param exitX - The X coordinate of the point where edge A-\>B exits the current cell row.
-     */
-    private _generateIntraEdgeVertices(
-        ring: Array<number>,
-        aX: number,
-        aY: number,
-        bX: number,
-        bY: number,
-        enterX: number,
-        exitX: number
-    ): void {
+    // Generate the vertex ring
+    for (let edgeIndex = 0; edgeIndex < 3; edgeIndex++) {
+        // Current edge that will be subdivided: a --> b
+        // The remaining vertex of the triangle: c
+        const aX = triangleVertices[edgeIndex * 2];
+        const aY = triangleVertices[edgeIndex * 2 + 1];
+        const bX = triangleVertices[((edgeIndex + 1) * 2) % 6];
+        const bY = triangleVertices[((edgeIndex + 1) * 2 + 1) % 6];
+        const cX = triangleVertices[((edgeIndex + 2) * 2) % 6];
+        const cY = triangleVertices[((edgeIndex + 2) * 2 + 1) % 6];
+        // Edge direction
         const dirX = bX - aX;
         const dirY = bY - aY;
+
+        // Edges parallel with either axis will need special handling later.
+        const isParallelY = dirX === 0;
         const isParallelX = dirY === 0;
 
-        const leftX = isParallelX ? Math.min(aX, bX) : Math.min(enterX, exitX);
-        const rightX = isParallelX ? Math.max(aX, bX) : Math.max(enterX, exitX);
+        // Distance along edge where it enters/exits current cell row,
+        // where distance 0 is the edge start point, 1 the endpoint, 0.5 the mid point, etc.
+        const tTop = (cellRowYTop - aY) / dirY;
+        const tBottom = (cellRowYBottom - aY) / dirY;
+        const tEnter = Math.min(tTop, tBottom);
+        const tExit = Math.max(tTop, tBottom);
 
-        const edgeSubdivisionLeftCellX = Math.floor(leftX / this._granularityCellSize) + 1;
-        const edgeSubdivisionRightCellX = Math.ceil(rightX / this._granularityCellSize) - 1;
+        // Determine if edge lies entirely outside this cell row.
+        // Check entry and exit points, or if edge is parallel with X, check its Y coordinate.
+        if ((!isParallelX && (tEnter >= 1 || tExit <= 0)) ||
+            (isParallelX && (aY < cellRowYTop || aY > cellRowYBottom))) {
+            // Skip this edge
+            // But make sure to add its endpoint vertex if needed.
+            if (bY >= cellRowYTop && bY <= cellRowYBottom) {
+                // The edge endpoint is withing this row, add it to the ring
+                ring.push(triangleIndices[(edgeIndex + 1) % 3]);
+            }
+            continue;
+        }
 
-        const isEdgeLeftToRight = isParallelX ? (aX < bX) : (enterX < exitX);
-        if (isEdgeLeftToRight) {
-            // Left to right
-            for (let cellX = edgeSubdivisionLeftCellX; cellX <= edgeSubdivisionRightCellX; cellX++) {
-                const x = cellX * this._granularityCellSize;
-                const y = aY + dirY * (x - aX) / dirX;
-                ring.push(this._vertexToIndex(x, y));
-            }
-        } else {
-            // Right to left
-            for (let cellX = edgeSubdivisionRightCellX; cellX >= edgeSubdivisionLeftCellX; cellX--) {
-                const x = cellX * this._granularityCellSize;
-                const y = aY + dirY * (x - aX) / dirX;
-                ring.push(this._vertexToIndex(x, y));
-            }
+        // Do not add original triangle vertices now, those are handled separately later
+
+        // Special case: edge vertex for entry into cell row
+        // If edge is parallel with X axis, there is no entry vertex
+        if (!isParallelX && tEnter > 0) {
+            const x = aX + dirX * tEnter;
+            const y = aY + dirY * tEnter;
+            ring.push(_vertexToIndex(context, x, y));
+        }
+
+        // The X coordinates of the points where the edge enters/exits the current cell row,
+        // or the edge start/endpoint, if the entry/exit happens beyond the edge bounds.
+        const enterX = aX + dirX * Math.max(tEnter, 0);
+        const exitX = aX + dirX * Math.min(tExit, 1);
+
+        // Generate edge interior vertices
+        // No need to subdivide (along X) edges that are parallel with Y
+        if (!isParallelY) {
+            _generateIntraEdgeVertices(context, _granularityCellSize, ring, aX, aY, bX, bY, enterX, exitX);
+        }
+
+        // Special case: edge vertex for exit from cell row
+        if (!isParallelX && tExit < 1) {
+            const x = aX + dirX * tExit;
+            const y = aY + dirY * tExit;
+            ring.push(_vertexToIndex(context, x, y));
+        }
+
+        // When to split inter-edge boundary segments?
+        // When the boundary doesn't intersect a vertex, its easy. But what if it does?
+
+        //      a
+        //     /|
+        //    / |
+        // --c--|--boundary
+        //    \ |
+        //     \|
+        //      b
+        //
+        // Inter-edge region should be generated when processing the a-b edge.
+        // This happens fine for the top row, for the bottom row,
+        //
+
+        //      x
+        //     /|
+        //    / |
+        // --x--x--boundary
+        //
+        // Edge that lies on boundary should be subdivided in its edge phase.
+        // The inter-edge phase will correctly skip it.
+
+        // Add endpoint vertex
+        if (isParallelX || (bY >= cellRowYTop && bY <= cellRowYBottom)) {
+            ring.push(triangleIndices[(edgeIndex + 1) % 3]);
+        }
+        // Any edge that has endpoint outside this row or on its boundary gets
+        // inter-edge vertices.
+        // No row boundary to split for edges parallel with X
+        if (!isParallelX && (bY <= cellRowYTop || bY >= cellRowYBottom)) {
+            _generateInterEdgeVertices(context, _granularityCellSize, ring, aX, aY, bX, bY, cX, cY,
+                exitX, cellRowYTop, cellRowYBottom);
         }
     }
 
-    /**
-     * Generates ring vertices along cell border.
-     * Call when processing an edge A-\>B that exits the current row (B lies outside the current row).
-     * Generates vertices along the cell edge between the exit point from cell row
-     * of edge A-\>B and entry of edge B-\>C, or entry of C-\>A if both A and C lie outside the cell row.
-     * Does not handle adding edge endpoint vertices or edge cell row enter/exit vertices.
-     * @param ring - Ordered array of vertex indices for the constructed ring. New indices are placed here.
-     * @param exitX - The X coordinate of the point where edge A-\>B exits the current cell row.
-     * @param cellRowYTop - The current cell row top Y coordinate.
-     * @param cellRowYBottom - The current cell row bottom Y coordinate.
-     */
-    private _generateInterEdgeVertices(
-        ring: Array<number>,
-        aX: number,
-        aY: number,
-        bX: number,
-        bY: number,
-        cX: number,
-        cY: number,
-        exitX: number,
-        cellRowYTop: number,
-        cellRowYBottom: number
-    ): void {
-        const dirY = bY - aY;
+    return ring;
+}
 
-        const dir2X = cX - bX;
-        const dir2Y = cY - bY;
-        const t2Top = (cellRowYTop - bY) / dir2Y;
-        const t2Bottom = (cellRowYBottom - bY) / dir2Y;
-        // The distance along edge B->C where it enters/exits the current cell row,
-        // where distance 0 is B, 1 is C, 0.5 is the edge midpoint, etc.
-        const t2Enter = Math.min(t2Top, t2Bottom);
-        const t2Exit = Math.max(t2Top, t2Bottom);
-        const enter2X = bX + dir2X * t2Enter;
-        let boundarySubdivisionLeftCellX = Math.floor(Math.min(enter2X, exitX) / this._granularityCellSize) + 1;
-        let boundarySubdivisionRightCellX = Math.ceil(Math.max(enter2X, exitX) / this._granularityCellSize) - 1;
-        let isBoundaryLeftToRight = exitX < enter2X;
+/**
+ * Generates ring vertices along an edge A-\>B, but only in the part that intersects a given cell row.
+ * Does not handle adding edge endpoint vertices or edge cell row enter/exit vertices.
+ * @param ring - Ordered array of vertex indices for the constructed ring. New indices are placed here.
+ * @param enterX - The X coordinate of the point where edge A-\>B enters the current cell row.
+ * @param exitX - The X coordinate of the point where edge A-\>B exits the current cell row.
+ */
+function _generateIntraEdgeVertices(
+    context: SubdivisionContext,
+    _granularityCellSize: number,
+    ring: Array<number>,
+    aX: number,
+    aY: number,
+    bX: number,
+    bY: number,
+    enterX: number,
+    exitX: number
+): void {
+    const dirX = bX - aX;
+    const dirY = bY - aY;
+    const isParallelX = dirY === 0;
 
-        const isParallelX2 = dir2Y === 0;
+    const leftX = isParallelX ? Math.min(aX, bX) : Math.min(enterX, exitX);
+    const rightX = isParallelX ? Math.max(aX, bX) : Math.max(enterX, exitX);
 
-        if (isParallelX2 && (cY === cellRowYTop || cY === cellRowYBottom)) {
-            // Special case when edge b->c that lies on the cell boundary.
-            // Do not generate any inter-edge vertices in this case,
-            // this b->c edge gets subdivided when it is itself processed.
-            return;
+    const edgeSubdivisionLeftCellX = Math.floor(leftX / _granularityCellSize) + 1;
+    const edgeSubdivisionRightCellX = Math.ceil(rightX / _granularityCellSize) - 1;
+
+    const isEdgeLeftToRight = isParallelX ? (aX < bX) : (enterX < exitX);
+    if (isEdgeLeftToRight) {
+        // Left to right
+        for (let cellX = edgeSubdivisionLeftCellX; cellX <= edgeSubdivisionRightCellX; cellX++) {
+            const x = cellX * _granularityCellSize;
+            const y = aY + dirY * (x - aX) / dirX;
+            ring.push(_vertexToIndex(context, x, y));
         }
-
-        if (isParallelX2 || t2Enter >= 1 || t2Exit <= 0) {
-            // The next edge (b->c) lies entirely outside this cell row
-            // Find entry point for the edge after that instead (c->a)
-
-            // There may be at most 1 edge that is parallel to X in a triangle.
-            // The main "a->b" edge must not be parallel at this point in the code.
-            // We know that "a->b" crosses the current cell row boundary, such that point "b" is beyond the boundary.
-            // If "b->c" is parallel to X, then "c->a" must not be parallel and must cross the cell row boundary back:
-            //      a
-            //      |\
-            // -----|-\--cell row boundary----
-            //      |  \
-            //      c---b
-            // If "b->c" is not parallel to X and doesn't cross the cell row boundary,
-            // then c->a must also not be parallel to X and must cross the cell boundary back,
-            // since points "a" and "c" lie on different sides of the boundary and on different Y coordinates.
-            //
-            // Thus there is no need for "parallel with X" checks inside this condition branch.
-
-            // Compute the X coordinate where edge C->A enters the current cell row
-            const dir3X = aX - cX;
-            const dir3Y = aY - cY;
-            const t3Top = (cellRowYTop - cY) / dir3Y;
-            const t3Bottom = (cellRowYBottom - cY) / dir3Y;
-            const t3Enter = Math.min(t3Top, t3Bottom);
-            const enter3X = cX + dir3X * t3Enter;
-
-            boundarySubdivisionLeftCellX = Math.floor(Math.min(enter3X, exitX) / this._granularityCellSize) + 1;
-            boundarySubdivisionRightCellX = Math.ceil(Math.max(enter3X, exitX) / this._granularityCellSize) - 1;
-            isBoundaryLeftToRight = exitX < enter3X;
+    } else {
+        // Right to left
+        for (let cellX = edgeSubdivisionRightCellX; cellX >= edgeSubdivisionLeftCellX; cellX--) {
+            const x = cellX * _granularityCellSize;
+            const y = aY + dirY * (x - aX) / dirX;
+            ring.push(_vertexToIndex(context, x, y));
         }
+    }
+}
 
-        const boundaryY = dirY > 0 ? cellRowYBottom : cellRowYTop;
-        if (isBoundaryLeftToRight) {
-            // Left to right
-            for (let cellX = boundarySubdivisionLeftCellX; cellX <= boundarySubdivisionRightCellX; cellX++) {
-                const x = cellX * this._granularityCellSize;
-                ring.push(this._vertexToIndex(x, boundaryY));
+/**
+ * Generates ring vertices along cell border.
+ * Call when processing an edge A-\>B that exits the current row (B lies outside the current row).
+ * Generates vertices along the cell edge between the exit point from cell row
+ * of edge A-\>B and entry of edge B-\>C, or entry of C-\>A if both A and C lie outside the cell row.
+ * Does not handle adding edge endpoint vertices or edge cell row enter/exit vertices.
+ * @param ring - Ordered array of vertex indices for the constructed ring. New indices are placed here.
+ * @param exitX - The X coordinate of the point where edge A-\>B exits the current cell row.
+ * @param cellRowYTop - The current cell row top Y coordinate.
+ * @param cellRowYBottom - The current cell row bottom Y coordinate.
+ */
+function _generateInterEdgeVertices(
+    context: SubdivisionContext,
+    _granularityCellSize: number,
+    ring: Array<number>,
+    aX: number,
+    aY: number,
+    bX: number,
+    bY: number,
+    cX: number,
+    cY: number,
+    exitX: number,
+    cellRowYTop: number,
+    cellRowYBottom: number
+): void {
+    const dirY = bY - aY;
+
+    const dir2X = cX - bX;
+    const dir2Y = cY - bY;
+    const t2Top = (cellRowYTop - bY) / dir2Y;
+    const t2Bottom = (cellRowYBottom - bY) / dir2Y;
+    // The distance along edge B->C where it enters/exits the current cell row,
+    // where distance 0 is B, 1 is C, 0.5 is the edge midpoint, etc.
+    const t2Enter = Math.min(t2Top, t2Bottom);
+    const t2Exit = Math.max(t2Top, t2Bottom);
+    const enter2X = bX + dir2X * t2Enter;
+    let boundarySubdivisionLeftCellX = Math.floor(Math.min(enter2X, exitX) / _granularityCellSize) + 1;
+    let boundarySubdivisionRightCellX = Math.ceil(Math.max(enter2X, exitX) / _granularityCellSize) - 1;
+    let isBoundaryLeftToRight = exitX < enter2X;
+
+    const isParallelX2 = dir2Y === 0;
+
+    if (isParallelX2 && (cY === cellRowYTop || cY === cellRowYBottom)) {
+        // Special case when edge b->c that lies on the cell boundary.
+        // Do not generate any inter-edge vertices in this case,
+        // this b->c edge gets subdivided when it is itself processed.
+        return;
+    }
+
+    if (isParallelX2 || t2Enter >= 1 || t2Exit <= 0) {
+        // The next edge (b->c) lies entirely outside this cell row
+        // Find entry point for the edge after that instead (c->a)
+
+        // There may be at most 1 edge that is parallel to X in a triangle.
+        // The main "a->b" edge must not be parallel at this point in the code.
+        // We know that "a->b" crosses the current cell row boundary, such that point "b" is beyond the boundary.
+        // If "b->c" is parallel to X, then "c->a" must not be parallel and must cross the cell row boundary back:
+        //      a
+        //      |\
+        // -----|-\--cell row boundary----
+        //      |  \
+        //      c---b
+        // If "b->c" is not parallel to X and doesn't cross the cell row boundary,
+        // then c->a must also not be parallel to X and must cross the cell boundary back,
+        // since points "a" and "c" lie on different sides of the boundary and on different Y coordinates.
+        //
+        // Thus there is no need for "parallel with X" checks inside this condition branch.
+
+        // Compute the X coordinate where edge C->A enters the current cell row
+        const dir3X = aX - cX;
+        const dir3Y = aY - cY;
+        const t3Top = (cellRowYTop - cY) / dir3Y;
+        const t3Bottom = (cellRowYBottom - cY) / dir3Y;
+        const t3Enter = Math.min(t3Top, t3Bottom);
+        const enter3X = cX + dir3X * t3Enter;
+
+        boundarySubdivisionLeftCellX = Math.floor(Math.min(enter3X, exitX) / _granularityCellSize) + 1;
+        boundarySubdivisionRightCellX = Math.ceil(Math.max(enter3X, exitX) / _granularityCellSize) - 1;
+        isBoundaryLeftToRight = exitX < enter3X;
+    }
+
+    const boundaryY = dirY > 0 ? cellRowYBottom : cellRowYTop;
+    if (isBoundaryLeftToRight) {
+        // Left to right
+        for (let cellX = boundarySubdivisionLeftCellX; cellX <= boundarySubdivisionRightCellX; cellX++) {
+            const x = cellX * _granularityCellSize;
+            ring.push(_vertexToIndex(context, x, boundaryY));
+        }
+    } else {
+        // Right to left
+        for (let cellX = boundarySubdivisionRightCellX; cellX >= boundarySubdivisionLeftCellX; cellX--) {
+            const x = cellX * _granularityCellSize;
+            ring.push(_vertexToIndex(context, x, boundaryY));
+        }
+    }
+}
+
+/**
+ * Generates an outline for a given polygon, returns a list of arrays of line indices.
+ */
+function _generateOutline(context: SubdivisionContext, _granularity: number, polygon: Array<Array<Point>>): Array<Array<number>> {
+    const subdividedLines: Array<Array<number>> = [];
+    for (const ring of polygon) {
+        const line = subdivideVertexLine(ring, _granularity, true);
+        const pathIndices = _pointArrayToIndices(context, line);
+        // Points returned by subdivideVertexLine are "path" waypoints,
+        // for example with indices 0 1 2 3 0.
+        // We need list of individual line segments for rendering,
+        // for example 0, 1, 1, 2, 2, 3, 3, 0.
+        const lineIndices: Array<number> = [];
+        for (let i = 1; i < pathIndices.length; i++) {
+            lineIndices.push(pathIndices[i - 1]);
+            lineIndices.push(pathIndices[i]);
+        }
+        subdividedLines.push(lineIndices);
+    }
+    return subdividedLines;
+}
+
+/**
+ * Adds pole geometry if needed.
+ * @param subdividedTriangles - Array of generated triangle indices, new pole geometry is appended here.
+ */
+function _handlePoles(context: SubdivisionContext, _canonical: CanonicalTileID, subdividedTriangles: Array<number>) {
+    // Add pole vertices if the tile is at north/south mercator edge
+    let north = false;
+    let south = false;
+    if (_canonical) {
+        if (_canonical.y === 0) {
+            north = true;
+        }
+        if (_canonical.y === (1 << _canonical.z) - 1) {
+            south = true;
+        }
+    }
+    if (north || south) {
+        _fillPoles(context, subdividedTriangles, north, south);
+    }
+}
+
+/**
+ * Checks the internal vertex buffer for all vertices that might lie on the special pole coordinates and shifts them by one unit.
+ * Use for removing unintended pole vertices that might have been created during subdivision. After calling this function, actual pole vertices can be safely generated.
+ */
+function _ensureNoPoleVertices(context: SubdivisionContext) {
+    const flattened = context._vertexBuffer;
+
+    for (let i = 0; i < flattened.length; i += 2) {
+        const vy = flattened[i + 1];
+        if (vy === NORTH_POLE_Y) {
+            // Move slightly down
+            flattened[i + 1] = NORTH_POLE_Y + 1;
+        }
+        if (vy === SOUTH_POLE_Y) {
+            // Move slightly down
+            flattened[i + 1] = SOUTH_POLE_Y - 1;
+        }
+    }
+}
+
+/**
+ * Generates a quad from an edge to a pole with the correct winding order.
+ * Helper function used inside {@link _fillPoles}.
+ * @param indices - Index array into which the geometry is generated.
+ * @param i0 - Index of the first edge vertex.
+ * @param i1 - Index of the second edge vertex.
+ * @param v0x - X coordinate of the first edge vertex.
+ * @param v1x - X coordinate of the second edge vertex.
+ * @param poleY - The Y coordinate of the desired pole (NORTH_POLE_Y or SOUTH_POLE_Y).
+ */
+function _generatePoleQuad(context: SubdivisionContext, indices: Array<number>, i0: number, i1: number, v0x: number, v1x: number, poleY: number): void {
+    const flip = (v0x > v1x) !== (poleY === NORTH_POLE_Y);
+
+    if (flip) {
+        indices.push(i0);
+        indices.push(i1);
+        indices.push(_vertexToIndex(context, v0x, poleY));
+
+        indices.push(i1);
+        indices.push(_vertexToIndex(context, v1x, poleY));
+        indices.push(_vertexToIndex(context, v0x, poleY));
+    } else {
+        indices.push(i1);
+        indices.push(i0);
+        indices.push(_vertexToIndex(context, v0x, poleY));
+
+        indices.push(_vertexToIndex(context, v1x, poleY));
+        indices.push(i1);
+        indices.push(_vertexToIndex(context, v0x, poleY));
+    }
+}
+
+/**
+ * Detects edges that border the north or south tile edge
+ * and adds triangles that extend those edges to the poles.
+ * Only run this function on tiles that border the poles.
+ * Assumes that supplied geometry is clipped to the inclusive range of 0..EXTENT.
+ * Mutates the supplies vertex and index arrays.
+ * @param indices - Triangle indices. This array is appended with new primitives.
+ * @param north - Whether to generate geometry for the north pole.
+ * @param south - Whether to generate geometry for the south pole.
+ */
+function _fillPoles(context: SubdivisionContext, indices: Array<number>, north: boolean, south: boolean): void {
+    const flattened = context._vertexBuffer;
+
+    const northEdge = 0;
+    const southEdge = EXTENT;
+
+    const numIndices = indices.length;
+    for (let primitiveIndex = 2; primitiveIndex < numIndices; primitiveIndex += 3) {
+        const i0 = indices[primitiveIndex - 2];
+        const i1 = indices[primitiveIndex - 1];
+        const i2 = indices[primitiveIndex];
+        const v0x = flattened[i0 * 2];
+        const v0y = flattened[i0 * 2 + 1];
+        const v1x = flattened[i1 * 2];
+        const v1y = flattened[i1 * 2 + 1];
+        const v2x = flattened[i2 * 2];
+        const v2y = flattened[i2 * 2 + 1];
+
+        if (north) {
+            if (v0y === northEdge && v1y === northEdge) {
+                _generatePoleQuad(context, indices, i0, i1, v0x, v1x, NORTH_POLE_Y);
             }
-        } else {
-            // Right to left
-            for (let cellX = boundarySubdivisionRightCellX; cellX >= boundarySubdivisionLeftCellX; cellX--) {
-                const x = cellX * this._granularityCellSize;
-                ring.push(this._vertexToIndex(x, boundaryY));
+            if (v1y === northEdge && v2y === northEdge) {
+                _generatePoleQuad(context, indices, i1, i2, v1x, v2x, NORTH_POLE_Y);
+            }
+            if (v2y === northEdge && v0y === northEdge) {
+                _generatePoleQuad(context, indices, i2, i0, v2x, v0x, NORTH_POLE_Y);
+            }
+        }
+        if (south) {
+            if (v0y === southEdge && v1y === southEdge) {
+                _generatePoleQuad(context, indices, i0, i1, v0x, v1x, SOUTH_POLE_Y);
+            }
+            if (v1y === southEdge && v2y === southEdge) {
+                _generatePoleQuad(context, indices, i1, i2, v1x, v2x, SOUTH_POLE_Y);
+            }
+            if (v2y === southEdge && v0y === southEdge) {
+                _generatePoleQuad(context, indices, i2, i0, v2x, v0x, SOUTH_POLE_Y);
             }
         }
     }
+}
 
-    /**
-     * Generates an outline for a given polygon, returns a list of arrays of line indices.
-     */
-    private _generateOutline(polygon: Array<Array<Point>>): Array<Array<number>> {
-        const subdividedLines: Array<Array<number>> = [];
-        for (const ring of polygon) {
-            const line = subdivideVertexLine(ring, this._granularity, true);
-            const pathIndices = this._pointArrayToIndices(line);
-            // Points returned by subdivideVertexLine are "path" waypoints,
-            // for example with indices 0 1 2 3 0.
-            // We need list of individual line segments for rendering,
-            // for example 0, 1, 1, 2, 2, 3, 3, 0.
-            const lineIndices: Array<number> = [];
-            for (let i = 1; i < pathIndices.length; i++) {
-                lineIndices.push(pathIndices[i - 1]);
-                lineIndices.push(pathIndices[i]);
-            }
-            subdividedLines.push(lineIndices);
-        }
-        return subdividedLines;
+/**
+ * Adds all vertices in the supplied flattened vertex buffer into the internal vertex buffer.
+ */
+function _initializeVertices(context: SubdivisionContext, flattened: Array<number>) {
+    for (let i = 0; i < flattened.length; i += 2) {
+        _vertexToIndex(context, flattened[i], flattened[i + 1]);
+    }
+}
+
+/**
+ * Subdivides an input mesh. Imagine a regular square grid with the target granularity overlaid over the mesh - this is the subdivision's result.
+ * Assumes a mesh of tile features - vertex coordinates are integers, visible range where subdivision happens is 0..8192.
+ * @param polygon - The input polygon, specified as a list of vertex rings.
+ * @param generateOutlineLines - When true, also generates line indices for outline of the supplied polygon.
+ * @returns Vertex and index buffers with subdivision applied.
+ */
+function subdividePolygonInternal(granularity: number, canonical: CanonicalTileID, polygon: Array<Array<Point>>, generateOutlineLines: boolean): SubdivisionResult {
+    const context = new SubdivisionContext();
+    const granularityCellSize = EXTENT /granularity;
+
+    // Initialize the vertex dictionary with input vertices since we will use all of them anyway
+    const {flattened, holeIndices} = flatten(polygon);
+    _initializeVertices(context, flattened);
+
+    // Subdivide triangles
+    let subdividedTriangles: Array<number>;
+    try {
+        // At this point _finalVertices is just flattened polygon points
+        const earcutResult = earcut(flattened, holeIndices);
+        const cut = _convertIndices(context, flattened, earcutResult);
+        subdividedTriangles = _subdivideTrianglesScanline(context, granularity, granularityCellSize, cut);
+    } catch (e) {
+        console.error(e);
     }
 
-    /**
-     * Adds pole geometry if needed.
-     * @param subdividedTriangles - Array of generated triangle indices, new pole geometry is appended here.
-     */
-    private _handlePoles(subdividedTriangles: Array<number>) {
-        // Add pole vertices if the tile is at north/south mercator edge
-        let north = false;
-        let south = false;
-        if (this._canonical) {
-            if (this._canonical.y === 0) {
-                north = true;
-            }
-            if (this._canonical.y === (1 << this._canonical.z) - 1) {
-                south = true;
-            }
-        }
-        if (north || south) {
-            this._fillPoles(subdividedTriangles, north, south);
-        }
+    // Subdivide lines
+    let subdividedLines: Array<Array<number>> = [];
+    if (generateOutlineLines) {
+        subdividedLines = _generateOutline(context, granularity, polygon);
     }
 
-    /**
-     * Checks the internal vertex buffer for all vertices that might lie on the special pole coordinates and shifts them by one unit.
-     * Use for removing unintended pole vertices that might have been created during subdivision. After calling this function, actual pole vertices can be safely generated.
-     */
-    private _ensureNoPoleVertices() {
-        const flattened = this._vertexBuffer;
+    // Ensure no vertex has the special value used for pole vertices
+    _ensureNoPoleVertices(context);
 
-        for (let i = 0; i < flattened.length; i += 2) {
-            const vy = flattened[i + 1];
-            if (vy === NORTH_POLE_Y) {
-                // Move slightly down
-                flattened[i + 1] = NORTH_POLE_Y + 1;
-            }
-            if (vy === SOUTH_POLE_Y) {
-                // Move slightly down
-                flattened[i + 1] = SOUTH_POLE_Y - 1;
-            }
-        }
+    // Add pole geometry if needed
+    _handlePoles(context, canonical, subdividedTriangles);
+
+    return {
+        verticesFlattened: context._vertexBuffer,
+        indicesTriangles: subdividedTriangles,
+        indicesLineList: subdividedLines,
+    };
+}
+
+/**
+ * Sometimes the supplies vertex and index array has duplicate vertices - same coordinates that are referenced by multiple different indices.
+ * That is not allowed for purposes of subdivision, duplicates are removed in `initializeVertices`.
+ * This function converts the original index array that indexes into the original vertex array with duplicates
+ * into an index array that indexes into `_finalVertices`.
+ * @param vertices - Flattened vertex array used by the old indices. This may contain duplicate vertices.
+ * @param oldIndices - Indices into the old vertex array.
+ * @returns Indices transformed so that they are valid indices into `_finalVertices` (with duplicates removed).
+ */
+function _convertIndices(context: SubdivisionContext, vertices: Array<number>, oldIndices: Array<number>): Array<number> {
+    const newIndices = [];
+    for (let i = 0; i < oldIndices.length; i++) {
+        const x = vertices[oldIndices[i] * 2];
+        const y = vertices[oldIndices[i] * 2 + 1];
+        newIndices.push(_vertexToIndex(context, x, y));
     }
+    return newIndices;
+}
 
-    /**
-     * Generates a quad from an edge to a pole with the correct winding order.
-     * Helper function used inside {@link _fillPoles}.
-     * @param indices - Index array into which the geometry is generated.
-     * @param i0 - Index of the first edge vertex.
-     * @param i1 - Index of the second edge vertex.
-     * @param v0x - X coordinate of the first edge vertex.
-     * @param v1x - X coordinate of the second edge vertex.
-     * @param poleY - The Y coordinate of the desired pole (NORTH_POLE_Y or SOUTH_POLE_Y).
-     */
-    private _generatePoleQuad(indices, i0, i1, v0x, v1x, poleY): void {
-        const flip = (v0x > v1x) !== (poleY === NORTH_POLE_Y);
-
-        if (flip) {
-            indices.push(i0);
-            indices.push(i1);
-            indices.push(this._vertexToIndex(v0x, poleY));
-
-            indices.push(i1);
-            indices.push(this._vertexToIndex(v1x, poleY));
-            indices.push(this._vertexToIndex(v0x, poleY));
-        } else {
-            indices.push(i1);
-            indices.push(i0);
-            indices.push(this._vertexToIndex(v0x, poleY));
-
-            indices.push(this._vertexToIndex(v1x, poleY));
-            indices.push(i1);
-            indices.push(this._vertexToIndex(v0x, poleY));
-        }
+/**
+ * Converts an array of points into an array of indices into the internal vertex buffer (`_finalVertices`).
+ */
+function _pointArrayToIndices(context: SubdivisionContext, array: Array<Point>): Array<number> {
+    const indices = [];
+    for (let i = 0; i < array.length; i++) {
+        const p = array[i];
+        indices.push(_vertexToIndex(context, p.x, p.y));
     }
-
-    /**
-     * Detects edges that border the north or south tile edge
-     * and adds triangles that extend those edges to the poles.
-     * Only run this function on tiles that border the poles.
-     * Assumes that supplied geometry is clipped to the inclusive range of 0..EXTENT.
-     * Mutates the supplies vertex and index arrays.
-     * @param indices - Triangle indices. This array is appended with new primitives.
-     * @param north - Whether to generate geometry for the north pole.
-     * @param south - Whether to generate geometry for the south pole.
-     */
-    private _fillPoles(indices: Array<number>, north: boolean, south: boolean): void {
-        const flattened = this._vertexBuffer;
-
-        const northEdge = 0;
-        const southEdge = EXTENT;
-
-        const numIndices = indices.length;
-        for (let primitiveIndex = 2; primitiveIndex < numIndices; primitiveIndex += 3) {
-            const i0 = indices[primitiveIndex - 2];
-            const i1 = indices[primitiveIndex - 1];
-            const i2 = indices[primitiveIndex];
-            const v0x = flattened[i0 * 2];
-            const v0y = flattened[i0 * 2 + 1];
-            const v1x = flattened[i1 * 2];
-            const v1y = flattened[i1 * 2 + 1];
-            const v2x = flattened[i2 * 2];
-            const v2y = flattened[i2 * 2 + 1];
-
-            if (north) {
-                if (v0y === northEdge && v1y === northEdge) {
-                    this._generatePoleQuad(indices, i0, i1, v0x, v1x, NORTH_POLE_Y);
-                }
-                if (v1y === northEdge && v2y === northEdge) {
-                    this._generatePoleQuad(indices, i1, i2, v1x, v2x, NORTH_POLE_Y);
-                }
-                if (v2y === northEdge && v0y === northEdge) {
-                    this._generatePoleQuad(indices, i2, i0, v2x, v0x, NORTH_POLE_Y);
-                }
-            }
-            if (south) {
-                if (v0y === southEdge && v1y === southEdge) {
-                    this._generatePoleQuad(indices, i0, i1, v0x, v1x, SOUTH_POLE_Y);
-                }
-                if (v1y === southEdge && v2y === southEdge) {
-                    this._generatePoleQuad(indices, i1, i2, v1x, v2x, SOUTH_POLE_Y);
-                }
-                if (v2y === southEdge && v0y === southEdge) {
-                    this._generatePoleQuad(indices, i2, i0, v2x, v0x, SOUTH_POLE_Y);
-                }
-            }
-        }
-    }
-
-    /**
-     * Adds all vertices in the supplied flattened vertex buffer into the internal vertex buffer.
-     */
-    private _initializeVertices(flattened: Array<number>) {
-        for (let i = 0; i < flattened.length; i += 2) {
-            this._vertexToIndex(flattened[i], flattened[i + 1]);
-        }
-    }
-
-    /**
-     * Subdivides an input mesh. Imagine a regular square grid with the target granularity overlaid over the mesh - this is the subdivision's result.
-     * Assumes a mesh of tile features - vertex coordinates are integers, visible range where subdivision happens is 0..8192.
-     * @param polygon - The input polygon, specified as a list of vertex rings.
-     * @param generateOutlineLines - When true, also generates line indices for outline of the supplied polygon.
-     * @returns Vertex and index buffers with subdivision applied.
-     */
-    public subdividePolygonInternal(polygon: Array<Array<Point>>, generateOutlineLines: boolean): SubdivisionResult {
-        if (this._used) {
-            throw new Error('Subdivision: multiple use not allowed.');
-        }
-        this._used = true;
-
-        // Initialize the vertex dictionary with input vertices since we will use all of them anyway
-        const {flattened, holeIndices} = flatten(polygon);
-        this._initializeVertices(flattened);
-
-        // Subdivide triangles
-        let subdividedTriangles: Array<number>;
-        try {
-            // At this point this._finalVertices is just flattened polygon points
-            const earcutResult = earcut(flattened, holeIndices);
-            const cut = this._convertIndices(flattened, earcutResult);
-            subdividedTriangles = this._subdivideTrianglesScanline(cut);
-        } catch (e) {
-            console.error(e);
-        }
-
-        // Subdivide lines
-        let subdividedLines: Array<Array<number>> = [];
-        if (generateOutlineLines) {
-            subdividedLines = this._generateOutline(polygon);
-        }
-
-        // Ensure no vertex has the special value used for pole vertices
-        this._ensureNoPoleVertices();
-
-        // Add pole geometry if needed
-        this._handlePoles(subdividedTriangles);
-
-        return {
-            verticesFlattened: this._vertexBuffer,
-            indicesTriangles: subdividedTriangles,
-            indicesLineList: subdividedLines,
-        };
-    }
-
-    /**
-     * Sometimes the supplies vertex and index array has duplicate vertices - same coordinates that are referenced by multiple different indices.
-     * That is not allowed for purposes of subdivision, duplicates are removed in `this.initializeVertices`.
-     * This function converts the original index array that indexes into the original vertex array with duplicates
-     * into an index array that indexes into `this._finalVertices`.
-     * @param vertices - Flattened vertex array used by the old indices. This may contain duplicate vertices.
-     * @param oldIndices - Indices into the old vertex array.
-     * @returns Indices transformed so that they are valid indices into `this._finalVertices` (with duplicates removed).
-     */
-    private _convertIndices(vertices: Array<number>, oldIndices: Array<number>): Array<number> {
-        const newIndices = [];
-        for (let i = 0; i < oldIndices.length; i++) {
-            const x = vertices[oldIndices[i] * 2];
-            const y = vertices[oldIndices[i] * 2 + 1];
-            newIndices.push(this._vertexToIndex(x, y));
-        }
-        return newIndices;
-    }
-
-    /**
-     * Converts an array of points into an array of indices into the internal vertex buffer (`_finalVertices`).
-     */
-    private _pointArrayToIndices(array: Array<Point>): Array<number> {
-        const indices = [];
-        for (let i = 0; i < array.length; i++) {
-            const p = array[i];
-            indices.push(this._vertexToIndex(p.x, p.y));
-        }
-        return indices;
-    }
+    return indices;
 }
 
 /**
@@ -663,8 +648,7 @@ class Subdivider {
  * @returns An object that contains the generated vertex array, triangle index array and, if specified, line index arrays.
  */
 export function subdividePolygon(polygon: Array<Array<Point>>, canonical: CanonicalTileID, granularity: number, generateOutlineLines: boolean = true): SubdivisionResult {
-    const subdivider = new Subdivider(granularity, canonical);
-    return subdivider.subdividePolygonInternal(polygon, generateOutlineLines);
+    return subdividePolygonInternal(granularity, canonical, polygon, generateOutlineLines);
 }
 
 /**
