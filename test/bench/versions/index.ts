@@ -43,6 +43,7 @@ const zooms = [4, 8, 11, 13, 15, 17];
 const locations = zooms.map(zoom => ({center, zoom}));
 
 register('Paint', new Paint(style, locations));
+register('PaintGlobe', new Paint(style, locations, 'globe'));
 register('QueryPoint', new QueryPoint(style, locations));
 register('QueryBox', new QueryBox(style, locations));
 register('Layout', new Layout(style));

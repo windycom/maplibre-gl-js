@@ -1,6 +1,7 @@
 import Benchmark from '../lib/benchmark';
 import createMap from '../lib/create_map';
 import type {Map} from '../../../src/ui/map';
+import type {ProjectionSpecification} from '@maplibre/maplibre-gl-style-spec';
 
 const width = 1024;
 const height = 768;
@@ -9,11 +10,13 @@ export default class Paint extends Benchmark {
     style: string;
     locations: Array<any>;
     maps: Array<Map>;
+    projectionType?: ProjectionSpecification['type'];
 
-    constructor(style: string, locations: Array<any>) {
+    constructor(style: string, locations: Array<any>, projectionType?: ProjectionSpecification['type']) {
         super();
         this.style = style;
         this.locations = locations;
+        this.projectionType = projectionType;
     }
 
     async setup() {
@@ -24,7 +27,8 @@ export default class Paint extends Benchmark {
                     width,
                     height,
                     center: location.center,
-                    style: this.style
+                    style: this.style,
+                    projectionType: this.projectionType,
                 });
             }));
         } catch (error) {

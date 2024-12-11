@@ -23,6 +23,14 @@ const createMap = (options: any): Promise<Map> => {
             style: 'https://api.maptiler.com/maps/streets/style.json?key=get_your_own_OpIi9ZULNHzrESv6T2vL'
         }, options));
 
+        if (options.projectionType) {
+            map.on('style.load', () => {
+                map.setProjection({
+                    type: options.projectionType,
+                });
+            });
+        }
+
         map.on(options.idle ? 'idle' : 'load', () => {
                 if (options.stubRender) {
                     // If there's a pending rerender, cancel it.
